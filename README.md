@@ -104,7 +104,7 @@ VOLCENGINE_API_URL = "https://ark.cn-beijing.volces.com/api/v3"  # 保持默认
 ### 界面展示
 
 #### 主界面
-![主界面](./Pictures/1.png)
+![主界面](./Pictures/4.png)
 
 #### AI配置界面
 ![AI配置界面](./Pictures/2.png)
