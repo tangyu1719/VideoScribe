@@ -166,13 +166,14 @@ class App:
         # 先构建UI，确保所有UI组件都已创建
         self._build_ui()
         
-        # LangChain集成初始化
+        # LangChain集成初始化（禁用，因为用不到）
         self.langchain_integration = None
-        try:
-            self.langchain_integration = LangChainIntegration()
-            self.append_log("LangChain集成初始化成功", "INFO")
-        except Exception as e:
-            self.append_log(f"LangChain集成初始化失败：{e}", "WARNING")
+        # 注释掉LangChain初始化代码，避免显示无用的错误日志
+        # try:
+        #     self.langchain_integration = LangChainIntegration()
+        #     self.append_log("LangChain集成初始化成功", "INFO")
+        # except Exception as e:
+        #     self.append_log(f"LangChain集成初始化失败：{e}", "WARNING")
         
         # 自动恢复未完成任务
         self.recover_unfinished_tasks()
@@ -2559,20 +2560,20 @@ class App:
             progress_thread.start()
             
             try:
-                # 优化Whisper模型参数，在速度和准确率之间找到平衡点
+                # 固定配置：使用简体中文，优化速度和准确率
                 self.append_log("使用优化参数进行转写...", "INFO")
                 transcribe_start = time.time()
                 result = model.transcribe(
                     video_file, 
-                    language="zh",  # 明确指定中文
+                    language="zh",  # 固定为中文
                     fp16=False,  # 禁用FP16，提高兼容性
                     verbose=False,  # 禁用详细输出，提高速度
                     task="transcribe",  # 明确指定任务为转写
-                    beam_size=1,  # 进一步减小beam_size，显著提高速度
+                    beam_size=1,  # 减小beam_size，显著提高速度
                     temperature=0.0,  # 保持temperature=0.0，确保准确性
-                    best_of=1,  # 进一步减小best_of，提高速度
-                    patience=0.0,  # 进一步减小patience，提高速度
-                    initial_prompt="请使用标准简体中文进行转写。",  # 精简提示词
+                    best_of=1,  # 减小best_of，提高速度
+                    patience=0.0,  # 减小patience，提高速度
+                    initial_prompt="请使用标准简体中文进行转写，保持语句通顺，不要遗漏任何内容。",  # 固定使用简体中文提示词
                     condition_on_previous_text=False,  # 禁用上下文依赖，提高速度
                     compression_ratio_threshold=2.4  # 设置压缩比阈值，过滤低质量转写
                 )
@@ -2903,6 +2904,72 @@ class App:
             bg="#f0f4f8"
         )
         subtitle_label.pack(anchor=tk.W, pady=(5, 0))
+        
+        # 配置说明区域
+        desc_frame = tk.Frame(main_container, bg="#ffffff", bd=0, relief=tk.RAISED)
+        desc_frame.pack(fill=tk.X, pady=(0, 20))
+        desc_frame.configure(bg="#ffffff", highlightbackground="#0066cc", highlightthickness=1, borderwidth=0)
+        
+        desc_title = tk.Label(
+            desc_frame, 
+            text="配置说明", 
+            font=("微软雅黑", 12, "bold"),
+            foreground="#0066cc",
+            bg="#ffffff"
+        )
+        desc_title.pack(anchor=tk.W, padx=15, pady=(15, 10))
+        
+        desc_content = tk.Label(
+            desc_frame, 
+            text="本配置中心主要用于调整视频转文字后的AI文本分析参数，不影响语音转文字过程。\n\n" +
+            "**配置作用范围：**\n" +
+            "- 仅对AI文本分析步骤生效\n" +
+            "- 不影响语音转文字的速度和准确率\n" +
+            "- 不影响视频下载过程\n\n" +
+            "**使用示例：**\n" +
+            "1. 调整System Prompt来改变AI的分析角度\n" +
+            "2. 修改Rules来控制分析的重点和范围\n" +
+            "3. 自定义Output Template来改变最终文档的格式\n" +
+            "4. 调整线程数来优化多任务处理速度",
+            font=("微软雅黑", 10),
+            foreground="#333",
+            bg="#ffffff",
+            justify=tk.LEFT,
+            wraplength=950
+        )
+        desc_content.pack(anchor=tk.W, padx=15, pady=(0, 15))
+        
+        # 语音转文字说明
+        speech_desc_frame = tk.Frame(main_container, bg="#ffffff", bd=0, relief=tk.RAISED)
+        speech_desc_frame.pack(fill=tk.X, pady=(0, 20))
+        speech_desc_frame.configure(bg="#ffffff", highlightbackground="#009966", highlightthickness=1, borderwidth=0)
+        
+        speech_title = tk.Label(
+            speech_desc_frame, 
+            text="语音转文字说明", 
+            font=("微软雅黑", 12, "bold"),
+            foreground="#009966",
+            bg="#ffffff"
+        )
+        speech_title.pack(anchor=tk.W, padx=15, pady=(15, 10))
+        
+        speech_content = tk.Label(
+            speech_desc_frame, 
+            text="**语音转文字配置已固定为：**\n" +
+            "- 语言：简体中文\n" +
+            "- 模型：Whisper tiny（平衡速度和准确率）\n" +
+            "- 优化方向：速度优先，同时保证基本准确率\n\n" +
+            "**说明：**\n" +
+            "- 语音转文字过程无需用户配置\n" +
+            "- 系统会自动处理视频中的音频并转为文字\n" +
+            "- 转文字结果将作为AI分析的输入",
+            font=("微软雅黑", 10),
+            foreground="#333",
+            bg="#ffffff",
+            justify=tk.LEFT,
+            wraplength=950
+        )
+        speech_content.pack(anchor=tk.W, padx=15, pady=(0, 15))
         
         # 配置文件路径
         config_path_frame = tk.Frame(main_container, bg="#ffffff", bd=0, relief=tk.RAISED)
