@@ -1,0 +1,69 @@
+# Python编译缓存
+__pycache__/
+*.pyc
+
+# 视频文件
+videos/
+*.mp4
+*.mov
+*.avi
+*.wmv
+
+# 输出文档
+output/
+*.md
+
+# 日志文件
+logs/
+*.log
+
+# 配置文件（包含敏感信息）
+config.json
+feishu_dedup.json
+
+# 历史记录文件
+history.json
+
+# 数据库文件
+.langchain.db
+
+# 临时文件
+*.tmp
+*.temp
+
+# 二进制文件
+*.exe
+*.dll
+*.so
+*.dylib
+
+# FFmpeg目录
+ffmpeg/
+
+# 压缩文件
+*.zip
+*.rar
+*.7z
+
+# IDE配置
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 环境变量文件
+.env
+.env.local
+.env.*.local
+
+# 系统文件
+Thumbs.db
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# 其他临时文件
+*~
