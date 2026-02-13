@@ -12,6 +12,7 @@ videos/
 # 输出文档
 output/
 *.md
+!README.md
 
 # 日志文件
 logs/

@@ -27,8 +27,7 @@ import multiprocessing
 import asyncio
 import aiohttp
 
-# 导入LangChain集成
-from langchain_integration import LangChainIntegration
+# LangChain集成已移除
 
 APP_TITLE = "视频转文字处理工具 (GUI)"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -166,14 +165,7 @@ class App:
         # 先构建UI，确保所有UI组件都已创建
         self._build_ui()
         
-        # LangChain集成初始化（禁用，因为用不到）
-        self.langchain_integration = None
-        # 注释掉LangChain初始化代码，避免显示无用的错误日志
-        # try:
-        #     self.langchain_integration = LangChainIntegration()
-        #     self.append_log("LangChain集成初始化成功", "INFO")
-        # except Exception as e:
-        #     self.append_log(f"LangChain集成初始化失败：{e}", "WARNING")
+
         
         # 自动恢复未完成任务
         self.recover_unfinished_tasks()
@@ -2453,55 +2445,7 @@ class App:
                     "ai_summary": "视频主要介绍了产品的基本信息、使用步骤和注意事项，帮助用户快速了解产品的核心功能和使用方法。"
                 }
             
-            # 检查是否使用LangChain集成
-            if self.langchain_integration:
-                self.append_log("使用 LangChain 集成进行语音转文字和总结...", "INFO")
-                self.update_progress(45, "使用 LangChain 处理视频...")
-                
-                # 为了显示进度，我们可以添加一些中间状态更新
-                import threading
-                
-                # 创建一个线程来定期更新进度
-                def progress_updater():
-                    progress = 50
-                    while not transcribe_done:
-                        if progress < 85:
-                            progress += 1
-                            self.update_progress(progress, f"正在处理视频... {progress-45}%")
-                        time.sleep(1)
-                
-                transcribe_done = False
-                progress_thread = threading.Thread(target=progress_updater)
-                progress_thread.daemon = True
-                progress_thread.start()
-                
-                try:
-                    # 使用LangChain处理视频
-                    langchain_start = time.time()
-                    result = self.langchain_integration.process_video(video_file, user_prompt)
-                    langchain_end = time.time()
-                    
-                    transcribe_done = True
-                    self.append_log(f"LangChain处理耗时: {langchain_end - langchain_start:.2f}秒", "INFO")
-                    
-                    self.update_progress(85, "处理完成，准备生成文档...")
-                    
-                    self.append_log("语音转文字和总结完成！", "INFO")
-                    self.append_log(f"转写结果: {result['transcribe_text'][:100]}...", "INFO")
-                    self.append_log(f"总结结果: {result['ai_summary'][:100]}...", "INFO")
-                    
-                    total_end = time.time()
-                    self.append_log(f"语音转文字总耗时: {total_end - start_time:.2f}秒", "INFO")
-                    
-                    return {
-                        "segments": result["segments"],
-                        "ai_summary": result["ai_summary"]
-                    }
-                except Exception as e:
-                    self.append_log(f"LangChain处理异常：{e}", "ERROR")
-                    # 回退到传统方法
-                    transcribe_done = True
-                    self.append_log("回退到传统方法进行语音转文字...", "INFO")
+
             
             # 使用传统方法：Whisper 本地模型
             self.append_log("使用 Whisper 本地模型进行语音转文字...", "INFO")
