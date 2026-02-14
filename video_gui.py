@@ -42,11 +42,11 @@ VOLCENGINE_API_URL = "https://ark.cn-beijing.volces.com/api/v3"
 
 # 默认配置
 DEFAULT_CONFIG = {
-    "summary_prompt": "请对以下文本进行总结，提取关键知识点，整理成结构化的格式：\n{text}",
+    "summary_prompt": "请对以下文本进行总结，提取关键知识点，整理成结构化的格式。\n要求：\n1. 第一行必须是一个简洁的中文标题（不超过20个字符，不要包含#号）\n2. 后续内容按逻辑分段整理\n{text}",
     "volcengine_api_key": VOLCENGINE_API_KEY,
-    "system_prompt": "你是一个专业的视频内容分析助手，擅长从视频转写内容中提取关键信息并进行结构化分析。",
-    "rules": "1. 提取视频中的关键知识点和核心信息\n2. 保持客观中立的分析态度\n3. 结构化呈现分析结果\n4. 重点关注视频中的技术讲解和实用信息\n5. 文件名命名规则：总记录序号-月-日-文档名称（可通过规则控制文件名生成逻辑）",
-    "file_naming_rule": "总记录序号-月-日-文档名称",  # 文件名命名规则
+    "system_prompt": "你是一个专业的视频内容分析助手，擅长从视频转写内容中提取关键信息并进行结构化分析。你的输出格式要求：\n1. 第一行是简洁的中文标题（不超过20字符，不要包含#号，不要包含markdown语法标记）\n2. 后续是结构化的分析内容",
+    "rules": "1. 第一行必须是简洁的中文标题（不超过20字符，不要包含#号）\n2. 提取视频中的关键知识点和核心信息\n3. 保持客观中立的分析态度\n4. 结构化呈现分析结果\n5. 重点关注视频中的技术讲解和实用信息",
+    "file_naming_rule": "总记录序号-月-日-文档名称（文档名称从AI生成的第一行标题中提取）",  # 文件名命名规则
     "output_template": "# {platform}视频分析\n\n## 视频信息\n- 分析时间: {datetime}\n- 原始链接: {link}\n- 平台: {platform}\n\n## 语音转文字内容\n{transcript}\n\n## AI分析摘要\n{summary}",
     "user_prompt": ""
 }
@@ -1855,26 +1855,46 @@ class App:
             
             # 从摘要中提取标题
             if summary:
-                # 尝试提取第一行非空内容作为标题
+                # 尝试提取第一行内容作为标题
                 lines = summary.split('\n')
-                for line in lines:
+                for i, line in enumerate(lines):
                     line = line.strip()
-                    # 跳过空行和标题标记行
-                    if line and len(line) > 5 and not line.startswith('#'):
-                        # 清理标题，去除特殊字符
-                        import re
-                        # 去除标点符号和特殊字符（包括#号）
-                        title = re.sub(r'[\\/:*?"<>|#]', '', line)
-                        # 去除开头的数字和点（如"1. "）
-                        title = re.sub(r'^[\d\.\s]+', '', title)
-                        # 截取前20个字符作为文件名
-                        title = title[:20].strip()
-                        # 替换空格为下划线
-                        title = title.replace(' ', '_')
-                        # 确保标题不为空
-                        if title and title != '_':
-                            self.append_log(f"从AI摘要中提取标题：{title}")
-                            return title
+                    if not line:
+                        continue
+                    
+                    # 如果是Markdown标题格式 (# 标题)，提取#后面的内容
+                    if line.startswith('#'):
+                        # 去除所有#号和后面的空格
+                        title = line.lstrip('#').strip()
+                        if title and len(title) > 3:
+                            # 清理标题，去除特殊字符
+                            import re
+                            title = re.sub(r'[\\/:*?"<>|]', '', title)
+                            # 截取前20个字符作为文件名
+                            title = title[:20].strip()
+                            # 替换空格为下划线
+                            title = title.replace(' ', '_')
+                            # 确保标题不为空
+                            if title:
+                                self.append_log(f"从AI摘要中提取标题：{title}")
+                                return title
+                    else:
+                        # 普通文本行，跳过太短的内容
+                        if len(line) > 5:
+                            # 清理标题，去除特殊字符
+                            import re
+                            # 去除标点符号和特殊字符
+                            title = re.sub(r'[\\/:*?"<>|]', '', line)
+                            # 去除开头的数字和点（如 "1. "）
+                            title = re.sub(r'^[\d\.\s]+', '', title)
+                            # 截取前20个字符作为文件名
+                            title = title[:20].strip()
+                            # 替换空格为下划线
+                            title = title.replace(' ', '_')
+                            # 确保标题不为空
+                            if title and title != '_' and len(title) > 3:
+                                self.append_log(f"从AI摘要中提取标题：{title}")
+                                return title
             
             # 如果摘要中没有合适的标题，从链接中提取
             import re
