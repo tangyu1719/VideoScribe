@@ -608,7 +608,7 @@ class App:
                         'Referer': 'https://www.xiaohongshu.com/'
                     }
                     
-                    response = requests.get(link, headers=headers, timeout=10)
+                    response = requests.get(link, headers=headers, timeout=2)
                     if response.status_code == 200:
                         soup = BeautifulSoup(response.text, 'html.parser')
                         # 尝试从title标签提取
@@ -622,18 +622,55 @@ class App:
                 except ImportError:
                     # 如果缺少bs4模块，跳过网页解析，直接从链接中提取
                     self.append_log("缺少bs4模块，跳过网页解析，直接从链接中提取标题")
+                except Exception as e:
+                    # 超时或其他异常，跳过网页解析
+                    self.append_log(f"小红书链接解析异常：{e}，跳过网页解析")
+            
+            # 对于B站链接，尝试获取页面标题
+            elif "bilibili.com" in link:
+                import requests
+                
+                # 尝试导入BeautifulSoup
+                try:
+                    from bs4 import BeautifulSoup
+                    
+                    headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36',
+                        'Referer': 'https://www.bilibili.com/'
+                    }
+                    
+                    response = requests.get(link, headers=headers, timeout=2)
+                    if response.status_code == 200:
+                        soup = BeautifulSoup(response.text, 'html.parser')
+                        # 尝试从title标签提取
+                        title_tag = soup.find('title')
+                        if title_tag and title_tag.text:
+                            title = title_tag.text.strip()
+                            # 清理标题
+                            title = title.replace('\n', '').replace('\r', '').replace('  ', ' ')
+                            # 移除B站标题后缀 "_哔哩哔哩_bilibili"
+                            if title.endswith('_哔哩哔哩_bilibili'):
+                                title = title[:-len('_哔哩哔哩_bilibili')]
+                            self.append_log(f"从B站链接中提取标题：{title}")
+                            return title
+                except ImportError:
+                    # 如果缺少bs4模块，跳过网页解析，直接从链接中提取
+                    self.append_log("缺少bs4模块，跳过网页解析，直接从链接中提取标题")
+                except Exception as e:
+                    # 超时或其他异常，跳过网页解析
+                    self.append_log(f"B站链接解析异常：{e}，跳过网页解析")
             
             # 如果无法从页面获取，尝试从链接中提取
             import re
-            # 尝试匹配链接中的数字或有意义的部分
-            match = re.search(r'[a-zA-Z0-9_-]{8,}', link)
-            if match:
-                return match.group(0)
-            
             # 对于B站链接，尝试提取BV号
             bv_match = re.search(r'BV[0-9A-Za-z]{10}', link)
             if bv_match:
                 return bv_match.group(0)
+            
+            # 尝试匹配链接中的数字或有意义的部分
+            match = re.search(r'[a-zA-Z0-9_-]{8,}', link)
+            if match:
+                return match.group(0)
             
             # 返回默认标题
             return "未知标题"
@@ -1818,21 +1855,24 @@ class App:
             
             # 从摘要中提取标题
             if summary:
-                # 尝试提取第一句话作为标题
+                # 尝试提取第一行非空内容作为标题
                 lines = summary.split('\n')
                 for line in lines:
                     line = line.strip()
-                    if line and len(line) > 5:
+                    # 跳过空行和标题标记行
+                    if line and len(line) > 5 and not line.startswith('#'):
                         # 清理标题，去除特殊字符
                         import re
-                        # 去除标点符号和特殊字符
-                        title = re.sub(r'[\\/:*?"<>|]', '', line)
+                        # 去除标点符号和特殊字符（包括#号）
+                        title = re.sub(r'[\\/:*?"<>|#]', '', line)
+                        # 去除开头的数字和点（如"1. "）
+                        title = re.sub(r'^[\d\.\s]+', '', title)
                         # 截取前20个字符作为文件名
-                        title = title[:20]
+                        title = title[:20].strip()
                         # 替换空格为下划线
                         title = title.replace(' ', '_')
                         # 确保标题不为空
-                        if title:
+                        if title and title != '_':
                             self.append_log(f"从AI摘要中提取标题：{title}")
                             return title
             
@@ -2013,16 +2053,35 @@ class App:
         """从文本中提取URL"""
         import re
         
-        # 匹配http/https开头的URL
-        url_pattern = r'https?://[^\s]+'
+        # 清理文本中的反引号
+        text = text.replace('`', '')
+        
+        # 匹配http/https开头的URL，直到遇到空格或特殊字符
+        url_pattern = r'https?://[^\s<>"\'\)\]\}]+'
         urls = re.findall(url_pattern, text)
         
-        # 找到包含xiaohongshu.com的URL
-        for url in urls:
+        # 去重
+        unique_urls = list(dict.fromkeys(urls))
+        
+        # 优先处理抖音链接
+        for url in unique_urls:
+            if 'douyin.com' in url.lower() or 'v.douyin.com' in url.lower():
+                # 移除末尾可能的标点符号
+                url = url.rstrip('.,;:!?')
+                return url
+        
+        # 处理小红书链接
+        for url in unique_urls:
             if 'xiaohongshu.com' in url.lower():
                 # 移除末尾可能的标点符号
                 url = url.rstrip('.,;:!?')
                 return url
+        
+        # 处理其他链接
+        if unique_urls:
+            # 移除末尾可能的标点符号
+            url = unique_urls[0].rstrip('.,;:!?')
+            return url
                 
         return None
 
@@ -2070,19 +2129,31 @@ class App:
             if summary:
                 # 从摘要中提取标题
                 title = self.extract_title_from_summary(summary, link)
-                # 确保标题有效才更新
-                if title and title != "未知标题":
-                    # 更新任务的标题字段
-                    for task in self.history.get("tasks", []):
-                        if task.get("link") == link:
-                            # 只有当新标题比旧标题更有意义时才更新
-                            old_title = task.get("title", "")
-                            if not old_title or old_title == "未知标题":
-                                task["title"] = title
-                                task["updated_at"] = datetime.now().isoformat()
-                                save_history(self.history)
-                                self.append_log(f"从AI分析结果中提取并更新标题：{title}")
-                            break
+                # 确保标题有效
+                if not title or title == "未知标题":
+                    # 如果摘要不为空，使用摘要的前20个字符作为标题
+                    if summary:
+                        title = summary[:20].strip()
+                        # 清理标题
+                        import re
+                        title = re.sub(r'[\\/:*?"<>|]', '', title)
+                        title = title.replace(' ', '_')
+                        # 确保标题不为空
+                        if not title:
+                            title = "视频内容摘要"
+                        self.append_log(f"使用AI摘要内容生成标题：{title}")
+                
+                # 更新任务的标题字段
+                for task in self.history.get("tasks", []):
+                    if task.get("link") == link:
+                        # 总是更新标题，确保标题明确
+                        old_title = task.get("title", "")
+                        task["title"] = title
+                        task["updated_at"] = datetime.now().isoformat()
+                        save_history(self.history)
+                        if old_title != title:
+                            self.append_log(f"更新任务标题：{title}")
+                        break
 
             # 阶段4：生成Markdown
             self.update_task_status(link, "generate_md", "in_progress")
@@ -2169,6 +2240,112 @@ class App:
             if not self.processing_queue:
                 self.start_btn.config(state=tk.NORMAL)
 
+    # 抖音视频专用下载方法
+    def download_douyin_video(self, link: str):
+        """使用HTML解析方法下载抖音视频（免登录）"""
+        import time
+        import requests
+        import re
+        import json
+        
+        download_start = time.time()
+        
+        try:
+            self.append_log("使用抖音专用解析器下载视频...", "INFO")
+            
+            # 清理链接
+            link = link.strip('`')
+            
+            # 获取当前目录下的视频文件数量，作为总序号
+            existing_videos = [f for f in os.listdir(VIDEO_DIR) if f.endswith('.mp4')]
+            total_count = len(existing_videos) + 1
+            
+            # 获取当前日期（月-日）
+            current_date = time.strftime('%m-%d')
+            
+            # 从链接中提取文档名称
+            doc_name_match = re.search(r'\d+', link.split('/')[-1])
+            doc_name = doc_name_match.group(0) if doc_name_match else "douyin"
+            
+            # 构建新的文件名：总记录序号-月-日-文档名称
+            new_filename = f"{total_count:03d}-{current_date}-{doc_name}.mp4"
+            output_file = os.path.join(VIDEO_DIR, new_filename)
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) EdgiOS/121.0.2277.107 Version/17.0 Mobile/15E148 Safari/604.1'
+            }
+            
+            # 步骤1: 访问分享链接获取视频ID
+            self.append_log("解析抖音视频链接...", "INFO")
+            response = requests.get(link, headers=headers, allow_redirects=True, timeout=30)
+            video_id = response.url.split("?")[0].strip("/").split("/")[-1]
+            self.append_log(f"视频ID: {video_id}", "INFO")
+            
+            # 步骤2: 访问分享页面获取HTML
+            share_url = f'https://www.iesdouyin.com/share/video/{video_id}'
+            response = requests.get(share_url, headers=headers, timeout=30)
+            response.raise_for_status()
+            
+            # 步骤3: 从HTML中解析视频信息
+            pattern = re.compile(
+                pattern=r"window\._ROUTER_DATA\s*=\s*(.*?)</script>",
+                flags=re.DOTALL
+            )
+            find_res = pattern.search(response.text)
+            
+            if not find_res or not find_res.group(1):
+                self.append_log("未能从HTML中解析视频信息", "ERROR")
+                return None
+            
+            json_data = json.loads(find_res.group(1).strip())
+            
+            # 步骤4: 提取视频URL
+            video_url = None
+            if "loaderData" in json_data:
+                loader_data = json_data["loaderData"]
+                for key in loader_data:
+                    if "videoInfoRes" in str(loader_data[key]):
+                        data = loader_data[key]["videoInfoRes"]["item_list"][0]
+                        video_url = data["video"]["play_addr"]["url_list"][0].replace("playwm", "play")
+                        self.append_log("成功获取无水印视频链接", "INFO")
+                        break
+            
+            if not video_url:
+                self.append_log("未能提取视频URL", "ERROR")
+                return None
+            
+            # 步骤5: 下载视频
+            self.append_log("下载视频中...", "INFO")
+            video_response = requests.get(video_url, headers=headers, stream=True, timeout=120)
+            video_response.raise_for_status()
+            
+            with open(output_file, 'wb') as f:
+                for chunk in video_response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            
+            # 验证文件
+            if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
+                download_end = time.time()
+                self.append_log(f"视频下载成功: {output_file}", "INFO")
+                self.append_log(f"视频下载耗时: {download_end - download_start:.2f}秒", "INFO")
+                
+                # 添加到缓存
+                with self.video_cache_lock:
+                    self.video_cache[link] = output_file
+                
+                return output_file
+            else:
+                self.append_log("视频文件不存在或为空", "ERROR")
+            
+            return None
+            
+        except Exception as e:
+            download_end = time.time()
+            self.append_log(f"抖音视频下载异常: {e}", "ERROR")
+            self.append_log(f"视频下载耗时: {download_end - download_start:.2f}秒（异常）", "INFO")
+            return None
+
     # 步骤1：下载视频
     def download_video(self, link: str):
         import time
@@ -2177,6 +2354,15 @@ class App:
         try:
             # 清理链接中的反引号
             link = link.strip('`')
+            
+            # 对于抖音链接，优先使用专用解析器
+            if "douyin.com" in link or "tiktok.com" in link or "v.douyin.com" in link:
+                self.append_log("检测到抖音链接，使用专用解析器...", "INFO")
+                result = self.download_douyin_video(link)
+                if result:
+                    return result
+                else:
+                    self.append_log("专用解析器失败，尝试使用yt-dlp...", "WARNING")
             
             # 检查视频缓存
             with self.video_cache_lock:
@@ -2227,6 +2413,10 @@ class App:
                 referer = "https://www.bilibili.com/"
             elif "youtube.com" in link or "youtu.be" in link:
                 referer = "https://www.youtube.com/"
+            elif "douyin.com" in link or "tiktok.com" in link:
+                referer = "https://www.douyin.com/"
+                # 对于抖音链接，添加额外的参数以提高下载成功率
+                self.append_log("检测到抖音链接，使用专用配置...", "INFO")
             
             # 构建yt-dlp命令，直接下载到目标文件夹（优化：减少不必要的参数）
             cmd = [
@@ -2237,8 +2427,55 @@ class App:
                 "--quiet",  # 静默模式，减少输出
                 "--no-warnings",  # 禁用警告
                 "-o", output_file,
-                link
             ]
+            
+            # 对于抖音链接，添加额外的参数以提高下载成功率
+            if "douyin.com" in link or "tiktok.com" in link:
+                # 尝试多种方式获取cookies
+                cookie_added = False
+                
+                # 方式1: 检查是否存在抖音cookie文件
+                cookie_file = os.path.join(BASE_DIR, "douyin_cookies.txt")
+                if os.path.exists(cookie_file):
+                    self.append_log(f"使用抖音cookie文件：{cookie_file}", "INFO")
+                    cmd.extend(["--cookies", cookie_file])
+                    cookie_added = True
+                
+                # 方式2: 尝试从Firefox获取cookies（优先使用Firefox，因为它不会像Chrome那样被锁定）
+                if not cookie_added:
+                    try:
+                        self.append_log("尝试从Firefox浏览器获取cookies...", "INFO")
+                        # 直接添加Firefox cookies参数
+                        cmd.extend(["--cookies-from-browser", "firefox"])
+                        cookie_added = True
+                        self.append_log("已添加Firefox cookies参数", "INFO")
+                    except Exception as e:
+                        self.append_log(f"从Firefox获取cookies失败: {str(e)[:30]}", "WARNING")
+                
+                # 方式3: 如果Firefox失败，尝试Edge
+                if not cookie_added:
+                    try:
+                        self.append_log("尝试从Edge浏览器获取cookies...", "INFO")
+                        cmd.extend(["--cookies-from-browser", "edge"])
+                        cookie_added = True
+                        self.append_log("已添加Edge cookies参数", "INFO")
+                    except Exception as e:
+                        self.append_log(f"从Edge获取cookies失败: {str(e)[:30]}", "WARNING")
+                
+                if not cookie_added:
+                    self.append_log("警告：无法获取抖音cookies，下载可能失败", "WARNING")
+                    self.append_log("解决方案：在Firefox浏览器中登录抖音后重试", "WARNING")
+                
+                # 添加抖音专用参数（使用兼容的参数格式）
+                cmd.extend([
+                    "--user-agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
+                    "--max-downloads", "1",
+                    "--no-check-certificate",
+                    "--ignore-errors",
+                    link
+                ])
+            else:
+                cmd.append(link)
             
             # 执行命令（增加超时时间，添加重试机制）
             max_retries = 2
@@ -2286,6 +2523,14 @@ class App:
                 # 优化：只显示部分错误信息
                 error_msg = result.stderr[:500] + "..." if len(result.stderr) > 500 else result.stderr
                 self.append_log(f"yt-dlp执行失败: {error_msg}", "ERROR")
+                
+                # 特殊处理抖音链接
+                if "douyin.com" in link:
+                    self.append_log("抖音视频下载失败，解决方案：", "ERROR")
+                    self.append_log("1. 确保使用的是直接视频链接（非用户页面或收藏页面）", "ERROR")
+                    self.append_log("2. 在Firefox浏览器中登录抖音网站（www.douyin.com）", "ERROR")
+                    self.append_log("3. 登录后重新运行本程序，程序会自动使用Firefox的cookies", "ERROR")
+                    self.append_log("4. 如果仍失败，请关闭Chrome浏览器后重试", "ERROR")
             
             # 执行失败，直接返回None表示失败，不使用示例文件
             self.append_log("视频下载失败", "ERROR")
@@ -2630,45 +2875,39 @@ class App:
                     ],
                 })
             
-            # 发送请求（增加重试机制）
-            max_retries = 3
-            for retry in range(max_retries):
-                try:
-                    self.append_log(f"调用火山引擎API进行总结（尝试 {retry+1}/{max_retries}）...", "INFO")
-                    
-                    # 创建Ark客户端
-                    client = Ark(
-                        base_url=VOLCENGINE_API_URL,
-                        api_key=api_key,
-                    )
-                    
-                    # 发送测试请求
-                    response = client.responses.create(
-                        model="doubao-seed-1-8-251228",
-                        input=input_content
-                    )
-                    
-                    # 解析响应
-                    if response.status == "completed" and response.output:
-                        for item in response.output:
-                            if item.type == "message" and item.role == "assistant":
-                                for content in item.content:
-                                    if content.type == "output_text":
-                                        summary = content.text
-                                        if summary:
-                                            self.append_log("火山引擎API调用成功", "INFO")
-                                            return summary
-                    
-                    self.append_log("火山引擎API返回空结果或格式不正确", "ERROR")
-                    return None
-                    
-                except Exception as e:
-                    self.append_log(f"火山引擎 API 调用异常：{e}", "ERROR")
-                    if retry < max_retries - 1:
-                        self.append_log(f"等待后重试...", "INFO")
-                        time.sleep(2)
-                    else:
-                        return None
+            # 发送请求（移除重试机制，提高速度）
+            try:
+                self.append_log("调用火山引擎API进行总结...", "INFO")
+                
+                # 创建Ark客户端
+                client = Ark(
+                    base_url=VOLCENGINE_API_URL,
+                    api_key=api_key,
+                )
+                
+                # 发送测试请求
+                response = client.responses.create(
+                    model="doubao-seed-1-8-251228",
+                    input=input_content
+                )
+                
+                # 解析响应
+                if response.status == "completed" and response.output:
+                    for item in response.output:
+                        if item.type == "message" and item.role == "assistant":
+                            for content in item.content:
+                                if content.type == "output_text":
+                                    summary = content.text
+                                    if summary:
+                                        self.append_log("火山引擎API调用成功", "INFO")
+                                        return summary
+                
+                self.append_log("火山引擎API返回空结果或格式不正确", "ERROR")
+                return None
+                
+            except Exception as e:
+                self.append_log(f"火山引擎 API 调用异常：{e}", "ERROR")
+                return None
         except Exception as e:
             self.append_log(f"火山引擎 API 调用异常：{e}", "ERROR")
             return None
