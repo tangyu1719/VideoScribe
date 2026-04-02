@@ -29,6 +29,55 @@ import aiohttp
 
 # LangChain集成已移除
 
+# RAG知识库集成 - 优先使用新的kb_manager（服务启动时初始化）
+try:
+    from kb_manager import get_knowledge_base
+    KB_MANAGER_AVAILABLE = True
+    print("使用新的知识库管理器（服务启动时初始化）")
+except ImportError:
+    KB_MANAGER_AVAILABLE = False
+    print("警告：新的知识库管理器未安装")
+
+# 向后兼容：旧的RAG知识库
+try:
+    from rag_knowledge_base import RAGKnowledgeBase
+    RAG_AVAILABLE = True
+except ImportError:
+    RAG_AVAILABLE = False
+    print("警告：RAG知识库模块未安装，知识库功能将不可用")
+
+# AI问答系统集成
+try:
+    from chat_gui import ChatGUI
+    CHAT_GUI_AVAILABLE = True
+except ImportError:
+    CHAT_GUI_AVAILABLE = False
+    print("警告：AI问答系统模块未安装")
+
+# 新的AI问答页面（带任务管理）
+try:
+    from ai_chat_page import AIChatPage
+    AI_CHAT_PAGE_AVAILABLE = True
+except ImportError:
+    AI_CHAT_PAGE_AVAILABLE = False
+    print("警告：AI问答页面模块未安装")
+
+# AI API配置管理模块
+try:
+    from ai_api_config_gui import open_ai_api_config_window, AIAPIConfigManager
+    AI_API_CONFIG_AVAILABLE = True
+except ImportError:
+    AI_API_CONFIG_AVAILABLE = False
+    print("警告：AI API配置模块未安装")
+
+# 多模态文档处理模块
+try:
+    from multimodal_gui import MultimodalProcessingPage
+    MULTIMODAL_AVAILABLE = True
+except ImportError:
+    MULTIMODAL_AVAILABLE = False
+    print("警告：多模态文档处理模块未安装")
+
 APP_TITLE = "视频转文字处理工具 (GUI)"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 VIDEO_DIR = os.path.join(BASE_DIR, "videos")
@@ -36,9 +85,19 @@ OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
 HISTORY_FILE = os.path.join(BASE_DIR, "history.json")
 
-# 火山引擎 API 配置
-VOLCENGINE_API_KEY = "5da00752-8f46-44eb-b162-5c52f2a249b3"
+# 火山引擎 API 配置（正确的API Key）
+VOLCENGINE_API_KEY = "ebc08852-e7ae-4e64-b71c-79cfcce9d251"
 VOLCENGINE_API_URL = "https://ark.cn-beijing.volces.com/api/v3"
+
+# AI 对话专用 API 配置（正确的API Key）
+AI_CHAT_API_KEY = "ebc08852-e7ae-4e64-b71c-79cfcce9d251"
+AI_CHAT_API_URL = "https://ark.cn-beijing.volces.com/api/v3"
+AI_CHAT_MODEL = "ep-20260320202517-w6ncg"  # Doubao-Seed-1.6-flash 接入点 ID
+
+# 百度 OCR API 配置（与链接分析保持一致）
+BAIDU_OCR_APP_ID = '122094788'
+BAIDU_OCR_API_KEY = 'KZOpVw7PGLRiBdsqRnuLFVY7'
+BAIDU_OCR_SECRET_KEY = 'L1pdbtb4IZZv67ofXnsxDNAhELGN2UXs'
 
 # 默认配置
 DEFAULT_CONFIG = {
@@ -95,6 +154,1378 @@ def save_history(history):
         print(f"保存历史记录失败：{e}")
         return False
 
+
+# ==================== 豆包AI风格聊天界面 ====================
+class DoubaoChatPage(tk.Frame):
+    """豆包AI风格聊天页面 - 模仿网页版豆包AI界面"""
+
+    # AI配置默认值（深拷贝自视频分析配置，但独立管理）
+    DEFAULT_AI_CONFIG = {
+        "thinking_system_prompt": "你是一个善于分析的AI助手。请简要分析用户问题的关键点，列出3-5个思考步骤。用简洁的要点形式回答。",
+        "response_system_prompt": "你是一个专业的AI助手，擅长回答各种问题。请根据用户的问题提供准确、有用的回答。",
+        "temperature": 0.7,
+        "max_tokens": 4096,
+        "top_p": 0.9,
+        "api_key": AI_CHAT_API_KEY,
+        "model": AI_CHAT_MODEL
+    }
+
+    def __init__(self, parent, rag_kb=None, **kwargs):
+        super().__init__(parent, bg="#f5f5f5", **kwargs)
+        self.sessions = []
+        self.current_session_id = None
+        self.messages = []
+        self.pending_images = []
+        self.ai_config = self._load_ai_config()
+        self._rag_kb = rag_kb  # 接收传入的RAG知识库
+
+        # 加载会话历史
+        self._load_sessions()
+
+        # 创建UI
+        self._create_ui()
+
+        # 如果没有会话，创建新会话
+        if not self.sessions:
+            self._create_new_session()
+        else:
+            self._load_session(self.sessions[0]["id"])
+
+    def _load_ai_config(self):
+        """加载AI配置"""
+        try:
+            config_file = os.path.join(BASE_DIR, "ai_chat_config.json")
+            if os.path.exists(config_file):
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    loaded_config = json.load(f)
+                    # 合并默认配置和加载的配置
+                    config = self.DEFAULT_AI_CONFIG.copy()
+                    config.update(loaded_config)
+                    return config
+        except Exception as e:
+            print(f"加载AI配置失败: {e}")
+        return self.DEFAULT_AI_CONFIG.copy()
+
+    def _save_ai_config(self):
+        """保存AI配置"""
+        try:
+            config_file = os.path.join(BASE_DIR, "ai_chat_config.json")
+            with open(config_file, 'w', encoding='utf-8') as f:
+                json.dump(self.ai_config, f, ensure_ascii=False, indent=2)
+            print("AI配置已保存")
+        except Exception as e:
+            print(f"保存AI配置失败: {e}")
+
+    def _create_ui(self):
+        """创建豆包AI风格界面"""
+        # 主分割面板
+        main_paned = tk.PanedWindow(self, orient=tk.HORIZONTAL, bg="#f5f5f5", sashwidth=1)
+        main_paned.pack(fill=tk.BOTH, expand=True)
+
+        # 左侧边栏
+        self.sidebar = self._create_sidebar(main_paned)
+        main_paned.add(self.sidebar, width=260, minsize=200)
+
+        # 右侧聊天区域
+        self.chat_area = self._create_chat_area(main_paned)
+        main_paned.add(self.chat_area, width=940, minsize=400)
+
+    def _create_sidebar(self, parent):
+        """创建左侧边栏 - 豆包风格"""
+        sidebar = tk.Frame(parent, bg="#ffffff", width=260)
+        sidebar.pack_propagate(False)
+
+        # 顶部标题区域
+        header = tk.Frame(sidebar, bg="#ffffff", height=60)
+        header.pack(fill=tk.X, padx=15, pady=10)
+        header.pack_propagate(False)
+
+        # AI助手标题
+        title_label = tk.Label(
+            header,
+            text="🤖 AI助手",
+            font=("微软雅黑", 16, "bold"),
+            bg="#ffffff",
+            fg="#1a1a1a"
+        )
+        title_label.pack(side=tk.LEFT)
+
+        # 新对话按钮
+        new_chat_btn = tk.Label(
+            header,
+            text="＋",
+            font=("微软雅黑", 20),
+            bg="#ffffff",
+            fg="#666666",
+            cursor="hand2"
+        )
+        new_chat_btn.pack(side=tk.RIGHT, padx=(0, 10))
+        new_chat_btn.bind("<Button-1>", lambda e: self._create_new_session())
+
+        # 设置按钮（COZE 风格）
+        settings_btn = tk.Label(
+            header,
+            text="⚙️",
+            font=("微软雅黑", 14),
+            bg="#ffffff",
+            fg="#666666",
+            cursor="hand2"
+        )
+        settings_btn.pack(side=tk.RIGHT)
+        settings_btn.bind("<Button-1>", lambda e: self._open_settings())
+        
+        # 知识库管理按钮（打开独立窗口）
+        if RAG_AVAILABLE:
+            kb_manage_btn = tk.Label(
+                header,
+                text="📚",
+                font=("微软雅黑", 14),
+                bg="#ffffff",
+                fg="#666666",
+                cursor="hand2"
+            )
+            kb_manage_btn.pack(side=tk.RIGHT, padx=(0, 10))
+            kb_manage_btn.bind("<Button-1>", lambda e: self._open_rag_manager())
+
+        # 分隔线
+        separator = tk.Frame(sidebar, bg="#e8e8e8", height=1)
+        separator.pack(fill=tk.X, padx=15)
+
+        # 知识库管理区域（添加文件/文件夹按钮）
+        if RAG_AVAILABLE:
+            kb_frame = tk.Frame(sidebar, bg="#ffffff", padx=15, pady=10)
+            kb_frame.pack(fill=tk.X)
+            
+            tk.Label(
+                kb_frame,
+                text="📚 知识库",
+                font=("微软雅黑", 11, "bold"),
+                bg="#ffffff",
+                fg="#333333"
+            ).pack(anchor="w", pady=(0, 5))
+            
+            btn_frame = tk.Frame(kb_frame, bg="#ffffff")
+            btn_frame.pack(fill=tk.X)
+            
+            # 添加文件按钮
+            add_file_btn = tk.Button(
+                btn_frame,
+                text="📄 添加文件",
+                command=self._add_file_to_kb,
+                bg="#f0f0f0",
+                fg="#333333",
+                font=("微软雅黑", 9),
+                relief=tk.FLAT,
+                cursor="hand2"
+            )
+            add_file_btn.pack(side=tk.LEFT, padx=(0, 5))
+            
+            # 添加文件夹按钮
+            add_folder_btn = tk.Button(
+                btn_frame,
+                text="📁 添加文件夹",
+                command=self._add_folder_to_kb,
+                bg="#f0f0f0",
+                fg="#333333",
+                font=("微软雅黑", 9),
+                relief=tk.FLAT,
+                cursor="hand2"
+            )
+            add_folder_btn.pack(side=tk.LEFT)
+            
+            # 重建索引按钮
+            rebuild_btn = tk.Button(
+                btn_frame,
+                text="🔄 重建索引",
+                command=self._rebuild_kb_index,
+                bg="#4e6ef2",
+                fg="#ffffff",
+                font=("微软雅黑", 9),
+                relief=tk.FLAT,
+                cursor="hand2"
+            )
+            rebuild_btn.pack(side=tk.LEFT, padx=(5, 0))
+            
+            # 分隔线
+            separator2 = tk.Frame(sidebar, bg="#e8e8e8", height=1)
+            separator2.pack(fill=tk.X, padx=15)
+
+        # 会话列表区域
+        list_frame = tk.Frame(sidebar, bg="#ffffff")
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # 会话列表Canvas
+        self.session_canvas = tk.Canvas(list_frame, bg="#ffffff", highlightthickness=0)
+        self.session_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.session_canvas.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.session_canvas.configure(yscrollcommand=scrollbar.set)
+
+        self.session_list_frame = tk.Frame(self.session_canvas, bg="#ffffff")
+        self.session_canvas.create_window((0, 0), window=self.session_list_frame, anchor="nw", width=220)
+
+        self.session_list_frame.bind("<Configure>", lambda e: self.session_canvas.configure(
+            scrollregion=self.session_canvas.bbox("all")))
+
+        # 刷新会话列表
+        self._refresh_session_list()
+
+        return sidebar
+
+    def _create_chat_area(self, parent):
+        """创建右侧聊天区域"""
+        chat_frame = tk.Frame(parent, bg="#f5f5f5")
+
+        # 聊天消息区域
+        msg_frame = tk.Frame(chat_frame, bg="#f5f5f5")
+        msg_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(20, 10))
+
+        # 消息Canvas
+        self.msg_canvas = tk.Canvas(msg_frame, bg="#f5f5f5", highlightthickness=0)
+        self.msg_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        msg_scrollbar = ttk.Scrollbar(msg_frame, orient="vertical", command=self.msg_canvas.yview)
+        msg_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.msg_canvas.configure(yscrollcommand=msg_scrollbar.set)
+
+        self.messages_frame = tk.Frame(self.msg_canvas, bg="#f5f5f5")
+        self.msg_canvas.create_window((0, 0), window=self.messages_frame, anchor="nw", width=900)
+
+        self.messages_frame.bind("<Configure>", lambda e: self.msg_canvas.configure(
+            scrollregion=self.msg_canvas.bbox("all")))
+
+        # 底部输入区域
+        self._create_input_area(chat_frame)
+
+        return chat_frame
+
+    def _create_input_area(self, parent):
+        """创建底部输入区域 - 豆包风格"""
+        input_frame = tk.Frame(parent, bg="#ffffff", height=120)
+        input_frame.pack(fill=tk.X, side=tk.BOTTOM, padx=20, pady=20)
+        input_frame.pack_propagate(False)
+
+        # 输入框
+        input_container = tk.Frame(input_frame, bg="#f5f5f5", height=50)
+        input_container.pack(fill=tk.X, padx=15, pady=15)
+        input_container.pack_propagate(False)
+
+        self.input_box = tk.Text(
+            input_container,
+            font=("微软雅黑", 12),
+            bg="#f5f5f5",
+            fg="#333333",
+            relief=tk.FLAT,
+            height=2,
+            wrap=tk.WORD
+        )
+        self.input_box.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(15, 10), pady=10)
+        self.input_box.bind("<Return>", self._on_enter_pressed)
+        self.input_box.bind("<Shift-Return>", self._on_shift_enter)
+
+        # 右侧按钮区域
+        btn_frame = tk.Frame(input_container, bg="#f5f5f5")
+        btn_frame.pack(side=tk.RIGHT, padx=10)
+
+        # 图片上传按钮
+        img_btn = tk.Label(
+            btn_frame,
+            text="📎",
+            font=("微软雅黑", 16),
+            bg="#f5f5f5",
+            fg="#666666",
+            cursor="hand2"
+        )
+        img_btn.pack(side=tk.LEFT, padx=5)
+        img_btn.bind("<Button-1>", lambda e: self._upload_image())
+
+        # 发送按钮
+        send_btn = tk.Label(
+            btn_frame,
+            text="➤",
+            font=("微软雅黑", 16),
+            bg="#4e6ef2",
+            fg="#ffffff",
+            cursor="hand2",
+            width=3,
+            height=1
+        )
+        send_btn.pack(side=tk.LEFT, padx=5)
+        send_btn.bind("<Button-1>", lambda e: self._send_message())
+
+        # 提示文字
+        hint_label = tk.Label(
+            input_frame,
+            text="Enter发送，Shift+Enter换行",
+            font=("微软雅黑", 9),
+            bg="#ffffff",
+            fg="#999999"
+        )
+        hint_label.pack(side=tk.BOTTOM, pady=(0, 8))
+
+    def _create_message_bubble(self, msg, msg_index=None):
+        """创建消息气泡（支持流式更新）- 豆包风格"""
+        is_user = msg.get("role") == "user"
+        msg_id = msg.get("id") or msg_index or id(msg)
+
+        # 消息容器
+        bubble_frame = tk.Frame(self.messages_frame, bg="#f5f5f5")
+        bubble_frame.pack(fill=tk.X, padx=20, pady=10)
+        bubble_frame.msg_id = msg_id
+
+        if is_user:
+            # 用户消息 - 右对齐
+            content_frame = tk.Frame(bubble_frame, bg="#f5f5f5")
+            content_frame.pack(side=tk.RIGHT)
+
+            # 头像
+            avatar = tk.Label(
+                content_frame,
+                text="👤",
+                font=("微软雅黑", 20),
+                bg="#f5f5f5"
+            )
+            avatar.pack(side=tk.RIGHT, padx=(10, 0))
+
+            # 气泡 - 使用Label自动换行，完整显示
+            bubble = tk.Label(
+                content_frame,
+                text=msg.get("content", ""),
+                font=("微软雅黑", 12),
+                bg="#4e6ef2",
+                fg="#ffffff",
+                wraplength=550,
+                justify=tk.LEFT,
+                padx=15,
+                pady=10
+            )
+            bubble.pack(side=tk.RIGHT)
+        else:
+            # AI消息 - 左对齐
+            content_frame = tk.Frame(bubble_frame, bg="#f5f5f5")
+            content_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+            # 头像
+            avatar = tk.Label(
+                content_frame,
+                text="🤖",
+                font=("微软雅黑", 20),
+                bg="#f5f5f5"
+            )
+            avatar.pack(side=tk.LEFT, padx=(0, 10), anchor="n")
+
+            # AI内容容器
+            ai_content_frame = tk.Frame(content_frame, bg="#f5f5f5")
+            ai_content_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            ai_content_frame.msg_id = msg_id
+
+            # 思考过程（可折叠）- 始终创建，支持流式更新
+            thinking_section = self._create_thinking_section(ai_content_frame, msg_id, msg.get("thinking", ""))
+            ai_content_frame.thinking_section = thinking_section
+
+            # 回复内容 - 使用Label完整显示，不需要滚动
+            content_label = tk.Label(
+                ai_content_frame,
+                text=msg.get("content", ""),
+                font=("微软雅黑", 12),
+                bg="#ffffff",
+                fg="#1a1a1a",
+                wraplength=550,
+                justify=tk.LEFT,
+                padx=15,
+                pady=10,
+                anchor="w"
+            )
+            content_label.pack(anchor="w", pady=(5, 0), fill=tk.X)
+            ai_content_frame.content_label = content_label
+
+            # 存储消息引用
+            bubble_frame.ai_content_frame = ai_content_frame
+
+        # 图片显示
+        if msg.get("images"):
+            for img_path in msg["images"]:
+                try:
+                    img_label = tk.Label(bubble_frame, text=f"[图片: {os.path.basename(img_path)}]",
+                                        bg="#f5f5f5", fg="#4e6ef2")
+                    img_label.pack()
+                except:
+                    pass
+
+        return bubble_frame
+
+    def _create_thinking_section(self, parent, msg_id, initial_content=""):
+        """创建可折叠的思考过程区域（支持流式更新）- 使用Label完整显示"""
+        # 思考过程容器
+        thinking_container = tk.Frame(parent, bg="#f5f5f5")
+        thinking_container.pack(fill=tk.X, pady=(0, 5))
+
+        # 头部（可点击折叠/展开）
+        header_frame = tk.Frame(thinking_container, bg="#f0f0f0", cursor="hand2")
+        header_frame.pack(fill=tk.X)
+
+        # 展开/折叠图标
+        toggle_icon = tk.Label(
+            header_frame,
+            text="▼",
+            font=("微软雅黑", 10),
+            bg="#f0f0f0",
+            fg="#666666"
+        )
+        toggle_icon.pack(side=tk.LEFT, padx=(10, 5))
+
+        # 标题
+        title_label = tk.Label(
+            header_frame,
+            text="思考过程",
+            font=("微软雅黑", 10),
+            bg="#f0f0f0",
+            fg="#666666"
+        )
+        title_label.pack(side=tk.LEFT)
+
+        # 内容区域（默认展开）
+        content_frame = tk.Frame(thinking_container, bg="#f8f8f8")
+        content_frame.pack(fill=tk.X, padx=0, pady=0)
+
+        # 思考内容 - 使用Label完整显示，不需要滚动
+        thinking_label = tk.Label(
+            content_frame,
+            text=initial_content,
+            font=("微软雅黑", 10),
+            bg="#f8f8f8",
+            fg="#888888",
+            wraplength=530,
+            justify=tk.LEFT,
+            padx=15,
+            pady=10,
+            anchor="w"
+        )
+        thinking_label.pack(fill=tk.X)
+
+        # 存储引用以便流式更新
+        thinking_container.msg_id = msg_id
+        thinking_container.thinking_label = thinking_label
+        thinking_container.content_frame = content_frame
+        thinking_container.toggle_icon = toggle_icon
+        thinking_container.header_frame = header_frame
+        thinking_container.title_label = title_label
+
+        # 点击事件处理
+        def toggle_thinking():
+            if content_frame.winfo_viewable():
+                content_frame.pack_forget()
+                toggle_icon.config(text="▶")
+                header_frame.config(bg="#e8e8e8")
+                toggle_icon.config(bg="#e8e8e8")
+                title_label.config(bg="#e8e8e8")
+            else:
+                content_frame.pack(fill=tk.X, padx=0, pady=0)
+                toggle_icon.config(text="▼")
+                header_frame.config(bg="#f0f0f0")
+                toggle_icon.config(bg="#f0f0f0")
+                title_label.config(bg="#f0f0f0")
+
+        header_frame.bind("<Button-1>", lambda e: toggle_thinking())
+        toggle_icon.bind("<Button-1>", lambda e: toggle_thinking())
+        title_label.bind("<Button-1>", lambda e: toggle_thinking())
+
+        return thinking_container
+
+    def _refresh_messages(self):
+        """刷新消息显示"""
+        for widget in self.messages_frame.winfo_children():
+            widget.destroy()
+
+        for i, msg in enumerate(self.messages):
+            self._create_message_bubble(msg, msg_index=i)
+
+    def _stream_update_thinking(self, msg_index, text):
+        """流式更新思考过程 - 使用Label"""
+        if msg_index < len(self.messages_frame.winfo_children()):
+            bubble_frame = self.messages_frame.winfo_children()[msg_index]
+            if hasattr(bubble_frame, 'ai_content_frame'):
+                ai_frame = bubble_frame.ai_content_frame
+                if hasattr(ai_frame, 'thinking_section'):
+                    thinking_label = ai_frame.thinking_section.thinking_label
+                    thinking_label.config(text=text)
+                    self.update_idletasks()
+
+    def _stream_update_content(self, msg_index, text):
+        """流式更新回复内容 - 使用Label"""
+        if msg_index < len(self.messages_frame.winfo_children()):
+            bubble_frame = self.messages_frame.winfo_children()[msg_index]
+            if hasattr(bubble_frame, 'ai_content_frame'):
+                content_label = bubble_frame.ai_content_frame.content_label
+                content_label.config(text=text)
+                self.update_idletasks()
+                # 自动滚动到底部
+                self._scroll_to_bottom()
+
+    def _scroll_to_bottom(self):
+        """滚动消息区域到底部"""
+        try:
+            self.after(100, lambda: self.msg_canvas.yview_moveto(1.0))
+        except Exception as e:
+            print(f"滚动失败: {e}")
+
+    def _refresh_session_list(self):
+        """刷新会话列表"""
+        for widget in self.session_list_frame.winfo_children():
+            widget.destroy()
+
+        for session in self.sessions:
+            session_id = session["id"]
+            title = session.get("title", "新对话")
+            is_active = session_id == self.current_session_id
+
+            # 会话项
+            item_frame = tk.Frame(
+                self.session_list_frame,
+                bg="#e8f0fe" if is_active else "#ffffff",
+                height=40,
+                cursor="hand2"
+            )
+            item_frame.pack(fill=tk.X, pady=2)
+            item_frame.pack_propagate(False)
+            
+            # 标题
+            title_label = tk.Label(
+                item_frame,
+                text=title[:20] + "..." if len(title) > 20 else title,
+                font=("微软雅黑", 11),
+                bg="#e8f0fe" if is_active else "#ffffff",
+                fg="#1a1a1a" if is_active else "#666666",
+                anchor="w"
+            )
+            title_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=15)
+            
+            # 按钮容器（确保按钮始终可见）
+            btn_frame = tk.Frame(
+                item_frame,
+                bg="#e8f0fe" if is_active else "#ffffff"
+            )
+            btn_frame.pack(side=tk.RIGHT, padx=5)
+            
+            # 重命名按钮（增强可见性）
+            rename_btn = tk.Label(
+                btn_frame,
+                text="✏️",
+                font=("微软雅黑", 10),
+                bg="#e8f0fe" if is_active else "#ffffff",
+                fg="#ff9800",  # 橙色更显眼
+                cursor="hand2",
+                padx=5,
+                pady=2
+            )
+            rename_btn.pack(side=tk.LEFT, padx=2)
+            rename_btn.bind("<Button-1>", lambda e, sid=session_id: self._rename_session(sid))
+            rename_btn.bind("<Enter>", lambda e: rename_btn.config(bg="#ffe0b2"))
+            rename_btn.bind("<Leave>", lambda e: rename_btn.config(bg="#e8f0fe" if is_active else "#ffffff"))
+            
+            # 删除按钮（增强可见性）
+            delete_btn = tk.Label(
+                btn_frame,
+                text="🗑️",
+                font=("微软雅黑", 10),
+                bg="#e8f0fe" if is_active else "#ffffff",
+                fg="#f44336",  # 红色更显眼
+                cursor="hand2",
+                padx=5,
+                pady=2
+            )
+            delete_btn.pack(side=tk.LEFT, padx=2)
+            delete_btn.bind("<Button-1>", lambda e, sid=session_id: self._delete_session(sid))
+            delete_btn.bind("<Enter>", lambda e: delete_btn.config(bg="#ffcdd2"))
+            delete_btn.bind("<Leave>", lambda e: delete_btn.config(bg="#e8f0fe" if is_active else "#ffffff"))
+
+            # 点击切换会话
+            item_frame.bind("<Button-1>", lambda e, sid=session_id: self._load_session(sid))
+            title_label.bind("<Button-1>", lambda e, sid=session_id: self._load_session(sid))
+
+    def _rename_session(self, session_id):
+        """重命名会话"""
+        # 找到当前会话
+        session = None
+        for s in self.sessions:
+            if s["id"] == session_id:
+                session = s
+                break
+        
+        if not session:
+            return
+        
+        # 弹出重命名对话框
+        dialog = tk.Toplevel(self)
+        dialog.title("重命名对话")
+        dialog.geometry("300x120")
+        dialog.transient(self)
+        dialog.grab_set()
+        
+        tk.Label(
+            dialog,
+            text="输入新名称:",
+            font=("微软雅黑", 11)
+        ).pack(pady=(10, 5))
+        
+        entry = tk.Entry(dialog, font=("微软雅黑", 11), width=30)
+        entry.pack(pady=5)
+        entry.insert(0, session.get("title", "新对话"))
+        entry.select_range(0, tk.END)
+        entry.focus()
+        
+        def do_rename():
+            new_title = entry.get().strip()
+            if new_title:
+                session["title"] = new_title
+                self._save_sessions()
+                self._refresh_session_list()
+            dialog.destroy()
+        
+        btn_frame = tk.Frame(dialog)
+        btn_frame.pack(pady=10)
+        
+        tk.Button(
+            btn_frame,
+            text="确定",
+            command=do_rename,
+            bg="#4e6ef2",
+            fg="white",
+            font=("微软雅黑", 10),
+            width=8
+        ).pack(side=tk.LEFT, padx=5)
+        
+        tk.Button(
+            btn_frame,
+            text="取消",
+            command=dialog.destroy,
+            font=("微软雅黑", 10),
+            width=8
+        ).pack(side=tk.LEFT, padx=5)
+        
+        # 回车确认
+        entry.bind("<Return>", lambda e: do_rename())
+    
+    def _delete_session(self, session_id):
+        """删除会话"""
+        # 找到当前会话
+        session = None
+        session_index = -1
+        for i, s in enumerate(self.sessions):
+            if s["id"] == session_id:
+                session = s
+                session_index = i
+                break
+        
+        if not session:
+            return
+        
+        # 确认删除
+        if not messagebox.askyesno("确认删除", f"确定要删除对话：{session.get('title', '新对话')}？\n\n此操作不可恢复！"):
+            return
+        
+        # 删除会话
+        self.sessions.pop(session_index)
+        
+        # 如果删除的是当前会话，切换到第一个会话或创建新会话
+        if session_id == self.current_session_id:
+            if self.sessions:
+                self._load_session(self.sessions[0]["id"])
+            else:
+                self._create_new_session()
+        else:
+            self._save_sessions()
+            self._refresh_session_list()
+
+    def _create_new_session(self):
+        """创建新会话"""
+        session_id = f"session_{int(time.time() * 1000)}"
+        session = {
+            "id": session_id,
+            "title": "新对话",
+            "created_at": datetime.now().isoformat(),
+            "messages": []
+        }
+        self.sessions.insert(0, session)
+        self._save_sessions()
+        self._refresh_session_list()
+        self._load_session(session_id)
+
+    def _load_session(self, session_id):
+        """加载会话"""
+        self.current_session_id = session_id
+        for session in self.sessions:
+            if session["id"] == session_id:
+                self.messages = session.get("messages", [])
+                break
+        self._refresh_session_list()
+        self._refresh_messages()
+
+    def _update_session_title(self, first_message):
+        """根据第一条消息自动命名会话"""
+        if not first_message:
+            return
+
+        title = first_message[:20] if len(first_message) <= 20 else first_message[:17] + "..."
+
+        for session in self.sessions:
+            if session["id"] == self.current_session_id:
+                session["title"] = title
+                break
+
+        self._save_sessions()
+        self._refresh_session_list()
+
+    def _send_message(self):
+        """发送消息"""
+        content = self.input_box.get("1.0", tk.END).strip()
+        if not content and not self.pending_images:
+            return
+
+        # 添加用户消息
+        user_msg = {
+            "role": "user",
+            "content": content,
+            "images": self.pending_images.copy(),
+            "timestamp": datetime.now().isoformat()
+        }
+        self.messages.append(user_msg)
+
+        # 更新会话标题（如果是第一条消息）
+        if len(self.messages) == 1:
+            self._update_session_title(content)
+
+        # 清空输入
+        self.input_box.delete("1.0", tk.END)
+        self.pending_images = []
+
+        # 刷新显示
+        self._refresh_messages()
+        self._save_current_session()
+
+        # TODO: 调用AI API获取回复
+        # 这里添加AI回复逻辑
+        self._simulate_ai_response()
+
+    def _log_to_file(self, message):
+        """记录日志到文件"""
+        try:
+            log_file = os.path.join(BASE_DIR, "chat_api.log")
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            with open(log_file, 'a', encoding='utf-8') as f:
+                f.write(f"[{timestamp}] {message}\n")
+        except Exception as e:
+            print(f"日志记录失败: {e}")
+
+    def _call_ai_api_stream(self, user_message, is_thinking=False):
+        """调用火山引擎API获取流式回复（使用配置参数）"""
+        # 使用配置中的模型和API Key
+        model = self.ai_config.get("model", AI_CHAT_MODEL)
+        api_key = self.ai_config.get("api_key", AI_CHAT_API_KEY)
+        
+        self._log_to_file(f"开始调用API: 模型={model}, 用户消息={user_message[:50]}..., is_thinking={is_thinking}")
+        
+        try:
+            from volcenginesdkarkruntime import Ark
+
+            client = Ark(base_url=AI_CHAT_API_URL, api_key=api_key)
+            self._log_to_file("Ark客户端创建成功")
+
+            # 查询RAG知识库获取相关上下文
+            rag_context = ""
+            if RAG_AVAILABLE and not is_thinking and self._rag_kb:  # 只在生成回答时检索，思考时不检索
+                try:
+                    search_results = self._rag_kb.search(user_message, top_k=3)
+                    if search_results:
+                        rag_context = "\n\n【知识库参考信息】\n"
+                        for i, result in enumerate(search_results, 1):
+                            rag_context += f"{i}. {result['content'][:300]}...\n"
+                        self._log_to_file(f"RAG检索到 {len(search_results)} 条相关知识")
+                except Exception as e:
+                    self._log_to_file(f"RAG检索失败: {e}")
+
+            # 根据is_thinking从配置中获取系统提示词
+            if is_thinking:
+                system_prompt = self.ai_config.get("thinking_system_prompt", 
+                    "你是一个善于分析的AI助手。请简要分析用户问题的关键点，列出3-5个思考步骤。用简洁的要点形式回答。")
+            else:
+                system_prompt = self.ai_config.get("response_system_prompt",
+                    "你是一个专业的AI助手，擅长回答各种问题。请根据用户的问题提供准确、有用的回答。")
+            
+            if rag_context:
+                system_prompt += f"\n\n在回答时，请参考以下知识库信息：{rag_context}\n请基于以上信息回答用户问题。"
+
+            # 构建input（新API格式）
+            input_messages = [
+                {"role": "system", "content": system_prompt}
+            ]
+            
+            # 添加历史对话（最近10条）
+            for msg in self.messages[-10:]:
+                if msg["role"] == "user":
+                    input_messages.append({"role": "user", "content": msg["content"]})
+                elif msg["role"] == "assistant" and msg.get("content"):
+                    input_messages.append({"role": "assistant", "content": msg["content"]})
+
+            self._log_to_file(f"调用API: 模型={model}, 消息数={len(input_messages)}")
+            
+            # 保存上下文到JSON文件
+            self._save_context_to_json(input_messages)
+
+            # 调用API（流式输出）- 使用chat.completions.create
+            self._log_to_file("准备调用chat.completions.create...")
+            
+            try:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=input_messages,
+                    stream=True,
+                    temperature=self.ai_config.get("temperature", 0.7),
+                    max_tokens=self.ai_config.get("max_tokens", 4096),
+                    top_p=self.ai_config.get("top_p", 0.9)
+                )
+                self._log_to_file("API调用成功，开始接收流式响应")
+
+                chunk_count = 0
+                for chunk in response:
+                    chunk_count += 1
+                    
+                    # 解析chunk内容
+                    if chunk.choices and len(chunk.choices) > 0:
+                        delta = chunk.choices[0].delta
+                        
+                        # 检查是否有内容
+                        if hasattr(delta, 'content') and delta.content:
+                            content = delta.content
+                            self._log_to_file(f"收到内容 [{chunk_count}]: {content[:50]}...")
+                            yield {"type": "content", "content": content}
+
+                self._log_to_file(f"流式响应结束，共收到 {chunk_count} 个chunk")
+            except Exception as api_error:
+                self._log_to_file(f"API调用异常: {api_error}")
+                import traceback
+                self._log_to_file(traceback.format_exc())
+                yield {"type": "error", "content": f"API调用失败: {str(api_error)}"}
+
+        except Exception as e:
+            error_msg = f"API调用错误: {e}"
+            self._log_to_file(error_msg)
+            import traceback
+            self._log_to_file(traceback.format_exc())
+            yield {"type": "error", "content": f"API调用失败: {str(e)}"}
+
+    def _save_context_to_json(self, messages):
+        """保存上下文到JSON文件"""
+        try:
+            context_file = os.path.join(BASE_DIR, "chat_context.json")
+            context_data = {
+                "timestamp": datetime.now().isoformat(),
+                "model": AI_CHAT_MODEL,
+                "message_count": len(messages),
+                "messages": messages
+            }
+            with open(context_file, 'w', encoding='utf-8') as f:
+                json.dump(context_data, f, ensure_ascii=False, indent=2)
+            self._log_to_file(f"上下文已保存到 {context_file}")
+        except Exception as e:
+            self._log_to_file(f"保存上下文失败: {e}")
+
+    def _simulate_ai_response(self):
+        """调用真实AI API（流式展示效果）- 使用多线程避免卡顿"""
+        # 获取用户最后一条消息
+        user_message = ""
+        for msg in reversed(self.messages):
+            if msg["role"] == "user":
+                user_message = msg["content"]
+                break
+
+        # 创建空消息
+        ai_msg = {
+            "role": "assistant",
+            "content": "",
+            "thinking": "",
+            "timestamp": datetime.now().isoformat()
+        }
+        self.messages.append(ai_msg)
+        self._refresh_messages()
+
+        msg_index = len(self.messages) - 1
+
+        # 在新线程中执行流式输出，避免卡住主界面
+        def stream_in_thread():
+            try:
+                # 第一步：调用API生成实时思考过程
+                self._log_to_file("开始生成思考过程...")
+                thinking_prompt = f"请分析这个问题，简要说明你的思考步骤（3-5点）：{user_message}"
+                
+                for chunk in self._call_ai_api_stream(thinking_prompt, is_thinking=True):
+                    if chunk["type"] == "content":
+                        ai_msg["thinking"] += chunk["content"]
+                        self.after(0, lambda t=ai_msg["thinking"]: self._stream_update_thinking(msg_index, t))
+                    elif chunk["type"] == "error":
+                        ai_msg["thinking"] = "思考过程生成失败"
+                        self.after(0, lambda t=ai_msg["thinking"]: self._stream_update_thinking(msg_index, t))
+                        break
+                
+                self._log_to_file(f"思考过程完成: {ai_msg['thinking'][:100]}...")
+                
+                # 第二步：调用API生成正式回答
+                self._log_to_file("开始生成回答...")
+                for chunk in self._call_ai_api_stream(user_message, is_thinking=False):
+                    if chunk["type"] == "content":
+                        ai_msg["content"] += chunk["content"]
+                        self.after(0, lambda t=ai_msg["content"]: self._stream_update_content(msg_index, t))
+                    elif chunk["type"] == "error":
+                        ai_msg["content"] = chunk["content"]
+                        self.after(0, lambda t=ai_msg["content"]: self._stream_update_content(msg_index, t))
+
+                # 保存会话
+                self.after(0, self._save_current_session)
+
+            except Exception as e:
+                print(f"流式输出错误: {e}")
+                ai_msg["content"] = f"发生错误: {str(e)}"
+                self.after(0, lambda t=ai_msg["content"]: self._stream_update_content(msg_index, t))
+
+        # 启动后台线程
+        threading.Thread(target=stream_in_thread, daemon=True).start()
+
+    def _on_enter_pressed(self, event):
+        """回车发送"""
+        self._send_message()
+        return "break"
+
+    def _on_shift_enter(self, event):
+        """Shift+Enter换行"""
+        pass
+
+    def _upload_image(self):
+        """上传图片"""
+        file_path = filedialog.askopenfilename(
+            title="选择图片",
+            filetypes=[("图片文件", "*.png *.jpg *.jpeg *.gif *.bmp")]
+        )
+        if file_path:
+            self.pending_images.append(file_path)
+            messagebox.showinfo("提示", f"已选择图片: {os.path.basename(file_path)}")
+
+    def _save_current_session(self):
+        """保存当前会话"""
+        for session in self.sessions:
+            if session["id"] == self.current_session_id:
+                session["messages"] = self.messages
+                break
+        self._save_sessions()
+
+    def _save_sessions(self):
+        """保存所有会话到文件"""
+        try:
+            sessions_file = os.path.join(BASE_DIR, "chat_sessions.json")
+            with open(sessions_file, 'w', encoding='utf-8') as f:
+                json.dump(self.sessions, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"保存会话失败: {e}")
+
+    def _load_sessions(self):
+        """从文件加载会话"""
+        try:
+            sessions_file = os.path.join(BASE_DIR, "chat_sessions.json")
+            if os.path.exists(sessions_file):
+                with open(sessions_file, 'r', encoding='utf-8') as f:
+                    self.sessions = json.load(f)
+        except Exception as e:
+            print(f"加载会话失败: {e}")
+            self.sessions = []
+
+    def _open_rag_manager(self):
+        """打开 RAG 知识库管理窗口（独立窗口）"""
+        try:
+            # 导入 RAG 管理器
+            from rag_manager_gui import RAGManagerGUI
+            
+            # 检查RAG是否已初始化
+            if not self._rag_kb:
+                messagebox.showerror("错误", "RAG知识库未初始化，请重启程序")
+                return
+            
+            # 创建独立窗口，传入已初始化的RAG
+            rag_manager = RAGManagerGUI(self, rag_kb=self._rag_kb)
+            
+            print("RAG 知识库管理窗口已打开")
+        except Exception as e:
+            messagebox.showerror("错误", f"打开知识库管理窗口失败：{e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _add_file_to_kb(self):
+        """添加文件到知识库（支持 TXT 和 MD）"""
+        if not RAG_AVAILABLE:
+            messagebox.showerror("错误", "RAG 知识库模块未安装")
+            return
+        
+        file_path = filedialog.askopenfilename(
+            title="选择文件",
+            filetypes=[
+                ("文本文件", "*.txt"),
+                ("Markdown 文件", "*.md"),
+                ("所有支持的文件", "*.txt *.md"),
+                ("所有文件", "*.*")
+            ]
+        )
+        
+        if file_path:
+            try:
+                if not self._rag_kb:
+                    messagebox.showerror("错误", "RAG知识库未初始化")
+                    return
+                
+                success = self._rag_kb.add_document(file_path)
+                if success:
+                    messagebox.showinfo("成功", f"文件已添加到知识库:\n{os.path.basename(file_path)}")
+                else:
+                    messagebox.showerror("错误", "添加文件失败")
+            except Exception as e:
+                messagebox.showerror("错误", f"添加文件失败: {e}")
+
+    def _add_folder_to_kb(self):
+        """添加文件夹到知识库"""
+        if not RAG_AVAILABLE:
+            messagebox.showerror("错误", "RAG知识库模块未安装")
+            return
+        
+        folder_path = filedialog.askdirectory(title="选择文件夹")
+        
+        if folder_path:
+            try:
+                if not self._rag_kb:
+                    messagebox.showerror("错误", "RAG知识库未初始化")
+                    return
+                
+                # 遍历文件夹中的所有文件
+                added_count = 0
+                total_files = 0
+                for root, dirs, files in os.walk(folder_path):
+                    for file in files:
+                        if file.endswith(('.txt', '.md')):
+                            total_files += 1
+                            file_path = os.path.join(root, file)
+                            try:
+                                if self._rag_kb.add_document(file_path):
+                                    added_count += 1
+                            except Exception as e:
+                                print(f"添加文件失败 {file_path}: {e}")
+                
+                messagebox.showinfo("成功", f"已添加 {added_count}/{total_files} 个文件到知识库")
+            except Exception as e:
+                messagebox.showerror("错误", f"添加文件夹失败: {e}")
+
+    def _rebuild_kb_index(self):
+        """重建知识库索引"""
+        if not RAG_AVAILABLE:
+            messagebox.showerror("错误", "RAG知识库模块未安装")
+            return
+        
+        try:
+            if not self._rag_kb:
+                messagebox.showerror("错误", "RAG知识库未初始化")
+                return
+            
+            # 重新加载索引
+            self._rag_kb.load_index()
+            
+            # 获取统计信息
+            doc_count = len(self._rag_kb.chunks)
+            messagebox.showinfo("成功", f"索引重建完成！\n当前知识库共有 {doc_count} 个文档片段")
+        except Exception as e:
+            messagebox.showerror("错误", f"重建索引失败：{e}")
+    
+    def _open_rag_manager(self):
+        """打开 RAG 知识库管理窗口（独立窗口）"""
+        try:
+            # 导入 RAG 管理器
+            from rag_manager_gui import RAGManagerGUI
+            
+            # 检查RAG是否已初始化
+            if not self._rag_kb:
+                messagebox.showerror("错误", "RAG知识库未初始化，请重启程序")
+                return
+            
+            # 创建独立窗口，传入已初始化的RAG
+            rag_manager = RAGManagerGUI(self, rag_kb=self._rag_kb)
+            
+            print("RAG 知识库管理窗口已打开")
+        except Exception as e:
+            messagebox.showerror("错误", f"打开知识库管理窗口失败：{e}")
+            import traceback
+            traceback.print_exc()
+
+    def _open_rag_manager(self):
+        """打开 RAG 知识库管理窗口（独立窗口）"""
+        try:
+            # 导入 RAG 管理器
+            from rag_manager_gui import RAGManagerGUI
+            
+            # 检查RAG是否已初始化
+            if not self._rag_kb:
+                messagebox.showerror("错误", "RAG知识库未初始化，请重启程序")
+                return
+            
+            # 创建独立窗口，传入已初始化的RAG
+            rag_manager = RAGManagerGUI(self, rag_kb=self._rag_kb)
+            
+            print("RAG 知识库管理窗口已打开")
+        except Exception as e:
+            messagebox.showerror("错误", f"打开知识库管理窗口失败：{e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _open_settings(self):
+        """打开AI配置界面（COZE风格）"""
+        settings_window = tk.Toplevel(self)
+        settings_window.title("AI配置")
+        settings_window.geometry("700x600")
+        settings_window.configure(bg="#f5f5f5")
+        
+        # 居中显示
+        settings_window.transient(self)
+        settings_window.grab_set()
+        
+        # 主容器
+        main_frame = tk.Frame(settings_window, bg="#f5f5f5")
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        # 标题
+        title_label = tk.Label(
+            main_frame,
+            text="🤖 AI助手配置",
+            font=("微软雅黑", 18, "bold"),
+            bg="#f5f5f5",
+            fg="#1a1a1a"
+        )
+        title_label.pack(anchor="w", pady=(0, 20))
+        
+        # 创建Notebook（标签页）
+        notebook = ttk.Notebook(main_frame)
+        notebook.pack(fill=tk.BOTH, expand=True)
+        
+        # === 标签页1: 系统提示词 ===
+        prompt_frame = tk.Frame(notebook, bg="#ffffff", padx=20, pady=20)
+        notebook.add(prompt_frame, text="系统提示词")
+        
+        # 思考过程提示词
+        tk.Label(
+            prompt_frame,
+            text="思考过程提示词:",
+            font=("微软雅黑", 11, "bold"),
+            bg="#ffffff",
+            fg="#333333"
+        ).pack(anchor="w", pady=(0, 5))
+        
+        thinking_text = scrolledtext.ScrolledText(
+            prompt_frame,
+            height=6,
+            font=("Consolas", 10),
+            wrap=tk.WORD,
+            bg="#fafafa",
+            fg="#333333"
+        )
+        thinking_text.pack(fill=tk.X, pady=(0, 15))
+        thinking_text.insert(tk.END, self.ai_config.get("thinking_system_prompt", ""))
+        
+        # 回复提示词
+        tk.Label(
+            prompt_frame,
+            text="回复提示词:",
+            font=("微软雅黑", 11, "bold"),
+            bg="#ffffff",
+            fg="#333333"
+        ).pack(anchor="w", pady=(0, 5))
+        
+        response_text = scrolledtext.ScrolledText(
+            prompt_frame,
+            height=6,
+            font=("Consolas", 10),
+            wrap=tk.WORD,
+            bg="#fafafa",
+            fg="#333333"
+        )
+        response_text.pack(fill=tk.X, pady=(0, 15))
+        response_text.insert(tk.END, self.ai_config.get("response_system_prompt", ""))
+        
+        # === 标签页2: 模型参数 ===
+        param_frame = tk.Frame(notebook, bg="#ffffff", padx=20, pady=20)
+        notebook.add(param_frame, text="模型参数")
+        
+        # Temperature
+        tk.Label(
+            param_frame,
+            text="Temperature (创造性):",
+            font=("微软雅黑", 11),
+            bg="#ffffff",
+            fg="#333333"
+        ).pack(anchor="w", pady=(0, 5))
+        
+        temp_scale = tk.Scale(
+            param_frame,
+            from_=0.0,
+            to=2.0,
+            resolution=0.1,
+            orient=tk.HORIZONTAL,
+            bg="#ffffff",
+            highlightthickness=0
+        )
+        temp_scale.set(self.ai_config.get("temperature", 0.7))
+        temp_scale.pack(fill=tk.X, pady=(0, 15))
+        
+        # Max Tokens
+        tk.Label(
+            param_frame,
+            text="Max Tokens (最大长度):",
+            font=("微软雅黑", 11),
+            bg="#ffffff",
+            fg="#333333"
+        ).pack(anchor="w", pady=(0, 5))
+        
+        max_tokens_entry = tk.Entry(
+            param_frame,
+            font=("Consolas", 11),
+            bg="#fafafa",
+            fg="#333333"
+        )
+        max_tokens_entry.pack(fill=tk.X, pady=(0, 15))
+        max_tokens_entry.insert(0, str(self.ai_config.get("max_tokens", 4096)))
+        
+        # Top P
+        tk.Label(
+            param_frame,
+            text="Top P (多样性):",
+            font=("微软雅黑", 11),
+            bg="#ffffff",
+            fg="#333333"
+        ).pack(anchor="w", pady=(0, 5))
+        
+        top_p_scale = tk.Scale(
+            param_frame,
+            from_=0.0,
+            to=1.0,
+            resolution=0.1,
+            orient=tk.HORIZONTAL,
+            bg="#ffffff",
+            highlightthickness=0
+        )
+        top_p_scale.set(self.ai_config.get("top_p", 0.9))
+        top_p_scale.pack(fill=tk.X, pady=(0, 15))
+        
+        # === 标签页3: API配置 ===
+        api_frame = tk.Frame(notebook, bg="#ffffff", padx=20, pady=20)
+        notebook.add(api_frame, text="API配置")
+        
+        # API Key
+        tk.Label(
+            api_frame,
+            text="API Key:",
+            font=("微软雅黑", 11),
+            bg="#ffffff",
+            fg="#333333"
+        ).pack(anchor="w", pady=(0, 5))
+        
+        api_key_entry = tk.Entry(
+            api_frame,
+            font=("Consolas", 11),
+            bg="#fafafa",
+            fg="#333333",
+            show="*"
+        )
+        api_key_entry.pack(fill=tk.X, pady=(0, 15))
+        api_key_entry.insert(0, self.ai_config.get("api_key", ""))
+        
+        # Model
+        tk.Label(
+            api_frame,
+            text="Model (接入点ID):",
+            font=("微软雅黑", 11),
+            bg="#ffffff",
+            fg="#333333"
+        ).pack(anchor="w", pady=(0, 5))
+        
+        model_entry = tk.Entry(
+            api_frame,
+            font=("Consolas", 11),
+            bg="#fafafa",
+            fg="#333333"
+        )
+        model_entry.pack(fill=tk.X, pady=(0, 15))
+        model_entry.insert(0, self.ai_config.get("model", ""))
+        
+        # 底部按钮
+        btn_frame = tk.Frame(main_frame, bg="#f5f5f5")
+        btn_frame.pack(fill=tk.X, pady=(20, 0))
+        
+        def save_settings():
+            """保存设置"""
+            self.ai_config["thinking_system_prompt"] = thinking_text.get(1.0, tk.END).strip()
+            self.ai_config["response_system_prompt"] = response_text.get(1.0, tk.END).strip()
+            self.ai_config["temperature"] = temp_scale.get()
+            self.ai_config["max_tokens"] = int(max_tokens_entry.get())
+            self.ai_config["top_p"] = top_p_scale.get()
+            self.ai_config["api_key"] = api_key_entry.get().strip()
+            self.ai_config["model"] = model_entry.get().strip()
+            
+            self._save_ai_config()
+            messagebox.showinfo("成功", "配置已保存！")
+            settings_window.destroy()
+        
+        def reset_defaults():
+            """恢复默认设置"""
+            thinking_text.delete(1.0, tk.END)
+            thinking_text.insert(tk.END, self.DEFAULT_AI_CONFIG["thinking_system_prompt"])
+            response_text.delete(1.0, tk.END)
+            response_text.insert(tk.END, self.DEFAULT_AI_CONFIG["response_system_prompt"])
+            temp_scale.set(self.DEFAULT_AI_CONFIG["temperature"])
+            max_tokens_entry.delete(0, tk.END)
+            max_tokens_entry.insert(0, str(self.DEFAULT_AI_CONFIG["max_tokens"]))
+            top_p_scale.set(self.DEFAULT_AI_CONFIG["top_p"])
+            api_key_entry.delete(0, tk.END)
+            api_key_entry.insert(0, self.DEFAULT_AI_CONFIG["api_key"])
+            model_entry.delete(0, tk.END)
+            model_entry.insert(0, self.DEFAULT_AI_CONFIG["model"])
+        
+        tk.Button(
+            btn_frame,
+            text="保存",
+            command=save_settings,
+            bg="#4e6ef2",
+            fg="#ffffff",
+            font=("微软雅黑", 11),
+            width=10,
+            cursor="hand2"
+        ).pack(side=tk.RIGHT, padx=(10, 0))
+        
+        tk.Button(
+            btn_frame,
+            text="恢复默认",
+            command=reset_defaults,
+            bg="#ffffff",
+            fg="#666666",
+            font=("微软雅黑", 11),
+            width=10,
+            cursor="hand2"
+        ).pack(side=tk.RIGHT, padx=(10, 0))
+        
+        tk.Button(
+            btn_frame,
+            text="取消",
+            command=settings_window.destroy,
+            bg="#ffffff",
+            fg="#666666",
+            font=("微软雅黑", 11),
+            width=10,
+            cursor="hand2"
+        ).pack(side=tk.RIGHT)
+
+
+# ==================== 主应用类 ====================
 # 加载配置
 CONFIG = load_config()
 
@@ -158,9 +1589,34 @@ class App:
         self.model_cache_lock = threading.Lock()  # 模型缓存锁
         self.video_cache = {}  # 视频缓存，键为链接，值为本地文件路径
         self.video_cache_lock = threading.Lock()  # 视频缓存锁
+        self.file_operation_lock = threading.Lock()  # 文件操作锁，防止文件竞争
+        self.file_counter_lock = threading.Lock()  # 文件计数器锁，确保文件名唯一
         
         # 功能开关
         self.feishu_enabled = False  # 飞书功能开关，默认禁用
+        
+        # 【优化】程序启动时初始化RAG知识库（只初始化一次）
+        # 优先使用新的kb_manager（服务启动时初始化版本）
+        self._rag_kb = None
+        if KB_MANAGER_AVAILABLE:
+            try:
+                print("[RAG] 程序启动，正在初始化新的知识库管理器...")
+                self._rag_kb = get_knowledge_base()
+                stats = self._rag_kb.get_stats()
+                print(f"[RAG] 知识库初始化成功: {stats['total_chunks']} chunks, model_loaded={stats['model_loaded']}")
+            except Exception as e:
+                print(f"[RAG] 新的知识库管理器初始化失败：{e}")
+                self._rag_kb = None
+        
+        # 向后兼容：如果新的不可用，使用旧的
+        if self._rag_kb is None and RAG_AVAILABLE:
+            try:
+                print("[RAG] 程序启动，正在初始化RAG知识库（旧版）...")
+                self._rag_kb = RAGKnowledgeBase()
+                print("[RAG] 知识库初始化成功")
+            except Exception as e:
+                print(f"[RAG] 知识库初始化失败：{e}")
+                self._rag_kb = None
 
         # 先构建UI，确保所有UI组件都已创建
         self._build_ui()
@@ -241,8 +1697,81 @@ class App:
         )
         subtitle_label.pack(anchor=tk.W, pady=(5, 0))
         
+        # 导航栏区域
+        nav_frame = tk.Frame(main_container, bg="#ffffff", bd=1, relief=tk.RAISED)
+        nav_frame.pack(fill=tk.X, pady=(0, 20))
+        nav_frame.configure(highlightbackground="#0066cc", highlightthickness=1)
+        
+        # 导航按钮容器
+        nav_container = tk.Frame(nav_frame, bg="#ffffff")
+        nav_container.pack(fill=tk.X, padx=10, pady=8)
+        
+        # 导航按钮样式
+        nav_btn_style = {
+            "font": ("微软雅黑", 11, "bold"),
+            "padx": 20,
+            "pady": 8,
+            "bd": 0,
+            "cursor": "hand2"
+        }
+        
+        # 视频处理页面按钮（默认选中）
+        self.nav_video_btn = tk.Button(
+            nav_container,
+            text="📹 视频处理",
+            command=self._show_video_page,
+            bg="#0066cc",
+            fg="#ffffff",
+            **nav_btn_style
+        )
+        self.nav_video_btn.pack(side=tk.LEFT, padx=5)
+        
+        # AI问答页面按钮
+        self.nav_chat_btn = tk.Button(
+            nav_container,
+            text="🤖 AI问答",
+            command=self._show_chat_page,
+            bg="#f0f4f8",
+            fg="#333333",
+            **nav_btn_style
+        )
+        self.nav_chat_btn.pack(side=tk.LEFT, padx=5)
+        
+        # 多模态文档处理页面按钮
+        self.nav_multimodal_btn = tk.Button(
+            nav_container,
+            text="📁 文档处理",
+            command=self._show_multimodal_page,
+            bg="#f0f4f8",
+            fg="#333333",
+            **nav_btn_style
+        )
+        self.nav_multimodal_btn.pack(side=tk.LEFT, padx=5)
+        
+        # 页面内容容器
+        self.content_frame = tk.Frame(main_container, bg="#f0f4f8")
+        self.content_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # 创建视频处理页面
+        self.video_page = tk.Frame(self.content_frame, bg="#f0f4f8")
+        self.video_page.pack(fill=tk.BOTH, expand=True)
+        
+        # 创建AI问答页面（初始隐藏）
+        self.chat_page = tk.Frame(self.content_frame, bg="#f0f4f8")
+        
+        # 创建多模态文档处理页面（初始隐藏）
+        self.multimodal_page = None
+        
+        # 构建视频处理页面内容
+        self._build_video_page(self.video_page)
+        
+        # 构建AI问答页面内容
+        self._build_chat_page(self.chat_page)
+        
+    def _build_video_page(self, parent):
+        """构建视频处理页面"""
         # 核心功能区域
-        core_frame = tk.Frame(main_container, bg="#f0f4f8")
+        core_frame = tk.Frame(parent, bg="#f0f4f8")
         core_frame.pack(fill=tk.X, pady=(0, 20))
         
         # 视频链接输入区域
@@ -282,6 +1811,10 @@ class App:
         self.ai_config_btn = ttk.Button(btn_container, text="AI配置", command=self.open_ai_config_window)
         self.ai_config_btn.pack(side=tk.LEFT, padx=10)
         
+        # AI API配置按钮（新的API配置界面）
+        self.ai_api_config_btn = ttk.Button(btn_container, text="API设置", command=self.open_ai_api_config_window)
+        self.ai_api_config_btn.pack(side=tk.LEFT, padx=10)
+        
         # 批量导入按钮
         self.batch_import_btn = ttk.Button(btn_container, text="批量导入", command=self.batch_import)
         self.batch_import_btn.pack(side=tk.LEFT, padx=10)
@@ -295,7 +1828,7 @@ class App:
         self.thread_config_btn.pack(side=tk.LEFT, padx=10)
         
         # 任务状态区域
-        self.status_frame = tk.Frame(main_container, bg="#ffffff", bd=0, relief=tk.RAISED)
+        self.status_frame = tk.Frame(parent, bg="#ffffff", bd=0, relief=tk.RAISED)
         self.status_frame.pack(fill=tk.X, pady=(0, 20))
         self.status_frame.configure(bg="#ffffff", highlightbackground="#0066cc", highlightthickness=1, borderwidth=0, highlightcolor="#0066cc")
         
@@ -319,7 +1852,7 @@ class App:
         self.queue_status.pack(side=tk.RIGHT, padx=(10, 15), pady=10)
         
         # User Prompt 输入区域
-        user_prompt_frame = tk.Frame(main_container, bg="#ffffff", bd=0, relief=tk.RAISED)
+        user_prompt_frame = tk.Frame(parent, bg="#ffffff", bd=0, relief=tk.RAISED)
         user_prompt_frame.pack(fill=tk.X, pady=(0, 20))
         user_prompt_frame.configure(bg="#ffffff", highlightbackground="#0066cc", highlightthickness=1, borderwidth=0, highlightcolor="#0066cc")
         
@@ -472,7 +2005,7 @@ class App:
         limit_characters()
         
         # 日志区域
-        log_frame = tk.Frame(main_container, bg="#ffffff", bd=0, relief=tk.RAISED)
+        log_frame = tk.Frame(parent, bg="#ffffff", bd=0, relief=tk.RAISED)
         log_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 20))
         log_frame.configure(bg="#ffffff", highlightbackground="#0066cc", highlightthickness=1, borderwidth=0, highlightcolor="#0066cc")
         
@@ -500,7 +2033,7 @@ class App:
         self.log.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 15))
         
         # 底部状态区域
-        status_frame = tk.Frame(main_container, bg="#f0f4f8")
+        status_frame = tk.Frame(parent, bg="#f0f4f8")
         status_frame.pack(fill=tk.X, pady=(0, 10))
         
         self.status_var = tk.StringVar(value="就绪")
@@ -751,6 +2284,144 @@ class App:
                 save_history(self.history)
                 return True
         return False
+    
+    # 页面切换方法
+    def _show_video_page(self):
+        """显示视频处理页面"""
+        if hasattr(self, 'current_page') and self.current_page == "video":
+            return
+        
+        # 隐藏AI问答页面
+        if hasattr(self, 'chat_page') and self.chat_page:
+            self.chat_page.pack_forget()
+        
+        # 隐藏多模态文档处理页面
+        if hasattr(self, 'multimodal_page') and self.multimodal_page:
+            self.multimodal_page.pack_forget()
+        
+        # 显示视频处理页面
+        if hasattr(self, 'video_page') and self.video_page:
+            self.video_page.pack(fill=tk.BOTH, expand=True)
+        
+        # 更新按钮样式
+        if hasattr(self, 'nav_video_btn') and hasattr(self, 'nav_chat_btn'):
+            self.nav_video_btn.configure(bg="#0066cc", fg="#ffffff")
+            self.nav_chat_btn.configure(bg="#f0f4f8", fg="#333333")
+        if hasattr(self, 'nav_multimodal_btn'):
+            self.nav_multimodal_btn.configure(bg="#f0f4f8", fg="#333333")
+        
+        self.current_page = "video"
+        self.root.title(APP_TITLE)
+    
+    def _show_chat_page(self):
+        """显示AI问答页面"""
+        if hasattr(self, 'current_page') and self.current_page == "chat":
+            return
+        
+        # 隐藏视频处理页面
+        if hasattr(self, 'video_page') and self.video_page:
+            self.video_page.pack_forget()
+        
+        # 隐藏多模态文档处理页面
+        if hasattr(self, 'multimodal_page') and self.multimodal_page:
+            self.multimodal_page.pack_forget()
+        
+        # 创建AI问答页面（如果还没有创建）
+        if not hasattr(self, 'chat_page') or self.chat_page is None:
+            if AI_CHAT_PAGE_AVAILABLE:
+                # 使用新的AIChatPage（带任务管理）
+                self.chat_page = AIChatPage(self.content_frame)
+            elif CHAT_GUI_AVAILABLE:
+                # 回退到旧的ChatGUI
+                self.chat_page = tk.Frame(self.content_frame, bg="#f0f4f8")
+                chat_gui = ChatGUI(self.chat_page)
+            else:
+                messagebox.showerror("错误", "AI问答系统模块未安装")
+                return
+        
+        # 显示AI问答页面
+        self.chat_page.pack(fill=tk.BOTH, expand=True)
+        
+        # 更新按钮样式
+        if hasattr(self, 'nav_video_btn') and hasattr(self, 'nav_chat_btn'):
+            self.nav_video_btn.configure(bg="#f0f4f8", fg="#333333")
+            self.nav_chat_btn.configure(bg="#0066cc", fg="#ffffff")
+        if hasattr(self, 'nav_multimodal_btn'):
+            self.nav_multimodal_btn.configure(bg="#f0f4f8", fg="#333333")
+        
+        self.current_page = "chat"
+        self.root.title(f"{APP_TITLE} - AI问答")
+    
+    def _show_multimodal_page(self):
+        """显示多模态文档处理页面"""
+        if hasattr(self, 'current_page') and self.current_page == "multimodal":
+            return
+        
+        if not MULTIMODAL_AVAILABLE:
+            messagebox.showerror("错误", "多模态文档处理模块未安装")
+            return
+        
+        # 隐藏视频处理页面
+        if hasattr(self, 'video_page') and self.video_page:
+            self.video_page.pack_forget()
+        
+        # 隐藏AI问答页面
+        if hasattr(self, 'chat_page') and self.chat_page:
+            self.chat_page.pack_forget()
+        
+        # 创建多模态文档处理页面（如果还没有创建）
+        if not hasattr(self, 'multimodal_page') or self.multimodal_page is None:
+            self.multimodal_page = MultimodalProcessingPage(self.content_frame)
+        
+        # 显示多模态文档处理页面
+        self.multimodal_page.pack(fill=tk.BOTH, expand=True)
+        
+        # 更新按钮样式
+        if hasattr(self, 'nav_video_btn') and hasattr(self, 'nav_chat_btn'):
+            self.nav_video_btn.configure(bg="#f0f4f8", fg="#333333")
+            self.nav_chat_btn.configure(bg="#f0f4f8", fg="#333333")
+        if hasattr(self, 'nav_multimodal_btn'):
+            self.nav_multimodal_btn.configure(bg="#0066cc", fg="#ffffff")
+        
+        self.current_page = "multimodal"
+        self.root.title(f"{APP_TITLE} - 文档处理")
+    
+    # 打开AI问答窗口
+    def open_ai_chat_window(self):
+        """打开AI问答系统窗口"""
+        if not CHAT_GUI_AVAILABLE:
+            messagebox.showerror("错误", "AI问答系统模块未安装，请检查chat_gui.py是否存在")
+            return
+        
+        try:
+            # 创建新窗口
+            chat_window = tk.Toplevel(self.root)
+            chat_window.title("🤖 AI技术专家问答系统")
+            chat_window.geometry("1200x800")
+            chat_window.minsize(1000, 600)
+            
+            # 创建ChatGUI实例
+            chat_gui = ChatGUI(chat_window)
+            
+            # 窗口关闭时清理
+            def on_close():
+                chat_window.destroy()
+            
+            chat_window.protocol("WM_DELETE_WINDOW", on_close)
+            
+            self.append_log("打开AI问答系统窗口")
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"打开AI问答系统失败：{e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _build_chat_page(self, parent):
+        """构建AI问答页面 - 使用豆包AI风格界面"""
+        # 使用豆包AI风格聊天界面，传入RAG知识库
+        chat_page = DoubaoChatPage(parent, rag_kb=self._rag_kb)
+        chat_page.pack(fill=tk.BOTH, expand=True)
+        self.ai_chat_page = chat_page
     
     # 显示历史记录
     def show_history(self):
@@ -1805,8 +3476,14 @@ class App:
             # 清理视频文件
             video_file = cached_results.get("download")
             if video_file and os.path.exists(video_file):
-                os.remove(video_file)
-                self.append_log(f"已清理视频缓存文件：{video_file}")
+                with self.file_operation_lock:
+                    try:
+                        os.remove(video_file)
+                        self.append_log(f"已清理视频缓存文件：{video_file}")
+                    except PermissionError:
+                        self.append_log(f"文件被占用，跳过清理：{video_file}")
+                    except Exception as e:
+                        self.append_log(f"清理视频文件失败：{e}")
             
             # 清理可能的临时文件
             import glob
@@ -1814,8 +3491,14 @@ class App:
             temp_files = glob.glob(os.path.join(VIDEO_DIR, f"*{url_hash}*"))
             for temp_file in temp_files:
                 if os.path.exists(temp_file):
-                    os.remove(temp_file)
-                    self.append_log(f"已清理临时缓存文件：{temp_file}")
+                    with self.file_operation_lock:
+                        try:
+                            os.remove(temp_file)
+                            self.append_log(f"已清理临时缓存文件：{temp_file}")
+                        except PermissionError:
+                            self.append_log(f"临时文件被占用，跳过清理：{temp_file}")
+                        except Exception as e:
+                            self.append_log(f"清理临时文件失败：{e}")
         except Exception as e:
             self.append_log(f"清理缓存文件异常：{e}")
     
@@ -1845,6 +3528,345 @@ class App:
                     self.cleanup_task_cache(task.get("link"), cached_results)
         except Exception as e:
             self.append_log(f"清理完成任务缓存异常：{e}")
+    
+    def _detect_platform(self, link: str) -> str:
+        """检测链接类型"""
+        if 'xiaohongshu.com' in link.lower():
+            # 所有小红书 /explore/ 路径的链接都视为视频（让 link_analyzer 进一步判断）
+            if '/explore/' in link:
+                return "小红书视频"
+            else:
+                return "小红书图文"
+        elif 'mp.weixin.qq.com' in link.lower():
+            # 微信公众号文章
+            return "微信公众号"
+        elif 'douyin.com' in link.lower() or 'tiktok.com' in link.lower():
+            return "抖音"
+        elif 'bilibili.com' in link.lower():
+            return "B 站"
+        elif 'youtube.com' in link.lower():
+            return "YouTube"
+        else:
+            return "视频"
+    
+    def _run_xiaohongshu_analysis(self, link: str, user_prompt: str = "", feishu_folder_path: str = None):
+        """运行小红书图文分析流程"""
+        try:
+            # 导入link_analyzer模块
+            try:
+                from link_analyzer import LinkAnalyzer
+            except ImportError as e:
+                self.append_log(f"导入link_analyzer模块失败：{e}")
+                self.update_task_status(link, "download", "failed")
+                self.update_progress(0, "失败")
+                return
+            
+            # 初始化分析器
+            analyzer = LinkAnalyzer()
+            
+            # 阶段1：提取图文内容
+            self.update_task_status(link, "download", "in_progress")
+            self.update_progress(10, "提取小红书图文内容...")
+            self.append_log("开始分析小红书链接...")
+            
+            result = analyzer.analyze_link(link)
+            
+            if not result or result.get('error'):
+                error_msg = result.get('error', '未知错误') if result else '分析失败'
+                self.append_log(f"小红书内容检测失败：{error_msg}")
+                self.update_task_status(link, "download", "failed")
+                self.update_progress(0, "失败")
+                return
+            
+            # 【关键】检查返回的类型
+            content_type = result.get('type', '')
+            self.append_log(f"小红书内容类型检测结果：{content_type}")
+            
+            if content_type == 'video':
+                # 是视频！跳转到视频下载流程
+                self.append_log("✓ 检测到小红书视频，跳转到视频下载流程...")
+                # 直接调用 download_video 方法（使用 yt-dlp 下载）
+                video_file = self.download_video(link)
+                if video_file:
+                    self.append_log(f"✓ 视频下载成功：{video_file}")
+                    # 继续后续处理（转写、生成 MD 等）- 复用主流程逻辑
+                    self._process_downloaded_video(video_file, link, user_prompt, feishu_folder_path)
+                else:
+                    self.append_log("✗ 视频下载失败")
+                    self.update_task_status(link, "download", "failed")
+                return
+            elif content_type == 'xiaohongshu':
+                # 是图文，继续图文分析
+                self.append_log("✓ 检测到小红书图文，继续图文分析...")
+            else:
+                # 未知类型，默认按图文处理
+                self.append_log(f"⚠ 未知内容类型：{content_type}，默认按图文处理")
+            
+            self.update_task_status(link, "download", "completed", result.get('summary', ''))
+            self.append_log(f"成功提取 {len(result.get('image_links', []))} 张图片")
+            
+            # 阶段2：AI分析
+            self.update_task_status(link, "ai_analysis", "in_progress")
+            self.update_progress(60, "使用AI进行内容分析...")
+            
+            summary = result.get('summary', '')
+            if not summary:
+                self.append_log("提取的内容为空，无法进行AI分析")
+                self.update_task_status(link, "ai_analysis", "failed")
+                self.update_progress(0, "失败")
+                return
+            
+            # 调用火山引擎AI进行分析
+            ai_summary = self.summarize_with_volcengine(summary, "")
+            
+            if not ai_summary:
+                self.append_log("AI分析失败")
+                self.update_task_status(link, "ai_analysis", "failed")
+                self.update_progress(0, "失败")
+                return
+            
+            self.update_task_status(link, "ai_analysis", "completed", ai_summary)
+            
+            # 从AI分析结果中提取标题
+            title = self.extract_title_from_summary(ai_summary, link)
+            if not title or title == "未知标题":
+                title = result.get('title', '小红书内容分析')
+                # 清理标题
+                import re
+                title = re.sub(r' - 小红书$', '', title)
+                title = re.sub(r'[\\/:*?"<>|]', '', title)
+                title = title.replace(' ', '_')
+            
+            # 更新任务标题
+            for task in self.history.get("tasks", []):
+                if task.get("link") == link:
+                    task["title"] = title
+                    task["updated_at"] = datetime.now().isoformat()
+                    save_history(self.history)
+                    self.append_log(f"更新任务标题：{title}")
+                    break
+            
+            # 阶段3：生成Markdown
+            self.update_task_status(link, "generate_md", "in_progress")
+            self.update_progress(80, "生成Markdown文档...")
+            
+            # 构建result_data格式
+            result_data = {
+                "transcript": summary,
+                "ai_summary": ai_summary,
+                "platform": "小红书",
+                "title": title,
+                "image_analysis": result.get('image_analysis', []),
+                "expected_image_count": result.get('expected_image_count', 0),
+                "actual_image_count": len(result.get('image_links', []))
+            }
+            
+            md_file = self.generate_md(result_data, link, "小红书")
+            
+            if not md_file:
+                self.append_log("生成文档失败")
+                self.update_task_status(link, "generate_md", "failed")
+                self.update_progress(0, "失败")
+                return
+            
+            self.update_task_status(link, "generate_md", "completed", md_file)
+            
+            # 阶段4：上传到飞书（如果启用）
+            if self.feishu_enabled:
+                self.update_task_status(link, "feishu_upload", "in_progress")
+                self.update_progress(90, "上传到飞书...")
+                
+                try:
+                    with open(md_file, 'r', encoding='utf-8') as f:
+                        md_content = f.read()
+                    
+                    from feishu_integration import FeishuKnowledgeBase
+                    feishu = FeishuKnowledgeBase('cli_a9b7cc9aba389bc4', 'q3VZTLZZjrsNeiJheqfkocH5ReV6Rmc6')
+                    
+                    prompt_folder = feishu.parse_feishu_folder_from_prompt(user_prompt)
+                    final_folder = feishu_folder_path or prompt_folder
+                    
+                    doc_title = os.path.basename(md_file).replace('.md', '')
+                    doc_token = feishu.upload_document(doc_title, md_content, feishu_folder_path=final_folder)
+                    
+                    if doc_token:
+                        self.append_log(f"文档已上传到飞书：{doc_token}")
+                        self.update_task_status(link, "feishu_upload", "completed", doc_token)
+                    else:
+                        self.append_log("上传到飞书失败")
+                        self.update_task_status(link, "feishu_upload", "failed")
+                except Exception as e:
+                    self.append_log(f"飞书上传异常：{e}")
+                    self.update_task_status(link, "feishu_upload", "failed")
+            else:
+                self.append_log("飞书功能已禁用，跳过上传步骤", "INFO")
+                self.update_task_status(link, "feishu_upload", "completed", "飞书功能已禁用")
+            
+            self.update_progress(100, "完成")
+            self.append_log("小红书图文分析完成！")
+            
+        except Exception as e:
+            self.append_log(f"小红书图文分析异常：{e}")
+            import traceback
+            traceback.print_exc()
+            self.update_task_status(link, "download", "failed")
+            self.update_progress(0, "失败")
+    
+    def _run_wechat_article_analysis(self, link: str, user_prompt: str = "", feishu_folder_path: str = None):
+        """运行微信公众号文章分析流程"""
+        try:
+            # 导入微信公众号文章处理器
+            try:
+                from wechat_article_processor import WeChatArticleProcessor
+            except ImportError as e:
+                self.append_log(f"导入wechat_article_processor模块失败：{e}")
+                self.update_task_status(link, "download", "failed")
+                self.update_progress(0, "失败")
+                return
+            
+            # 初始化处理器
+            processor = WeChatArticleProcessor()
+            
+            # 阶段1：提取文章内容
+            self.update_task_status(link, "download", "in_progress")
+            self.update_progress(10, "提取微信公众号文章内容...")
+            self.append_log("开始分析微信公众号文章链接...")
+            
+            result = processor.extract_article(link)
+            
+            if not result or result.get('error'):
+                error_msg = result.get('error', '未知错误') if result else '分析失败'
+                self.append_log(f"微信公众号文章提取失败：{error_msg}")
+                self.update_task_status(link, "download", "failed")
+                self.update_progress(0, "失败")
+                return
+            
+            # 检查提取的内容是否有效
+            title = result.get('title', '')
+            content = result.get('content', '')
+            
+            if title == "未找到标题" and len(content) < 100:
+                self.append_log(f"文章提取失败：无法获取有效内容，可能是链接无效或文章已删除")
+                self.update_task_status(link, "download", "failed")
+                self.update_progress(0, "失败")
+                return
+            
+            # 生成摘要
+            summary = processor.generate_summary(result)
+            
+            self.update_task_status(link, "download", "completed", summary)
+            self.append_log(f"成功提取文章: {title}")
+            self.append_log(f"作者: {result.get('author', '未知')}")
+            self.append_log(f"图片数量: {result.get('image_count', 0)}")
+            self.append_log(f"正文长度: {len(content)} 字符")
+            
+            # 阶段2：AI分析
+            self.update_task_status(link, "ai_analysis", "in_progress")
+            self.update_progress(60, "使用AI进行内容分析...")
+            
+            # 验证摘要内容
+            if not summary or len(summary) < 200:
+                self.append_log("提取的内容为空或太短，无法进行AI分析")
+                self.update_task_status(link, "ai_analysis", "failed")
+                self.update_progress(0, "失败")
+                return
+            
+            # 调用火山引擎AI进行分析
+            ai_summary = self.summarize_with_volcengine(summary, "")
+            
+            if not ai_summary:
+                self.append_log("AI分析失败")
+                self.update_task_status(link, "ai_analysis", "failed")
+                self.update_progress(0, "失败")
+                return
+            
+            self.update_task_status(link, "ai_analysis", "completed", ai_summary)
+            
+            # 从AI分析结果中提取标题
+            title = self.extract_title_from_summary(ai_summary, link)
+            if not title or title == "未知标题":
+                title = result.get('title', '微信公众号文章分析')
+                # 清理标题
+                import re
+                title = re.sub(r'[\\/:*?"<>|]', '', title)
+                title = title.replace(' ', '_')
+            
+            # 更新任务标题
+            for task in self.history.get("tasks", []):
+                if task.get("link") == link:
+                    task["title"] = title
+                    task["updated_at"] = datetime.now().isoformat()
+                    save_history(self.history)
+                    self.append_log(f"更新任务标题：{title}")
+                    break
+            
+            # 阶段3：生成Markdown
+            self.update_task_status(link, "generate_md", "in_progress")
+            self.update_progress(80, "生成Markdown文档...")
+            
+            # 构建result_data格式
+            result_data = {
+                "transcript": summary,
+                "ai_summary": ai_summary,
+                "platform": "微信公众号",
+                "title": title,
+                "image_analysis": result.get('image_analysis', []),
+                "expected_image_count": result.get('image_count', 0),
+                "actual_image_count": len(result.get('image_links', [])),
+                "author": result.get('author', ''),
+                "publish_time": result.get('publish_time', '')
+            }
+            
+            md_file = self.generate_md(result_data, link, "微信公众号")
+            
+            if not md_file:
+                self.append_log("生成文档失败")
+                self.update_task_status(link, "generate_md", "failed")
+                self.update_progress(0, "失败")
+                return
+            
+            self.update_task_status(link, "generate_md", "completed", md_file)
+            
+            # 阶段4：上传到飞书（如果启用）
+            if self.feishu_enabled:
+                self.update_task_status(link, "feishu_upload", "in_progress")
+                self.update_progress(90, "上传到飞书...")
+                
+                try:
+                    with open(md_file, 'r', encoding='utf-8') as f:
+                        md_content = f.read()
+                    
+                    from feishu_integration import FeishuKnowledgeBase
+                    feishu = FeishuKnowledgeBase('cli_a9b7cc9aba389bc4', 'q3VZTLZZjrsNeiJheqfkocH5ReV6Rmc6')
+                    
+                    prompt_folder = feishu.parse_feishu_folder_from_prompt(user_prompt)
+                    final_folder = feishu_folder_path or prompt_folder
+                    
+                    doc_title = os.path.basename(md_file).replace('.md', '')
+                    doc_token = feishu.upload_document(doc_title, md_content, feishu_folder_path=final_folder)
+                    
+                    if doc_token:
+                        self.append_log(f"文档已上传到飞书：{doc_token}")
+                        self.update_task_status(link, "feishu_upload", "completed", doc_token)
+                    else:
+                        self.append_log("上传到飞书失败")
+                        self.update_task_status(link, "feishu_upload", "failed")
+                except Exception as e:
+                    self.append_log(f"飞书上传异常：{e}")
+                    self.update_task_status(link, "feishu_upload", "failed")
+            else:
+                self.append_log("飞书功能已禁用，跳过上传步骤", "INFO")
+                self.update_task_status(link, "feishu_upload", "completed", "飞书功能已禁用")
+            
+            self.update_progress(100, "完成")
+            self.append_log("微信公众号文章分析完成！")
+            
+        except Exception as e:
+            self.append_log(f"微信公众号文章分析异常：{e}")
+            import traceback
+            traceback.print_exc()
+            self.update_task_status(link, "download", "failed")
+            self.update_progress(0, "失败")
     
     # 从摘要中提取标题
     def extract_title_from_summary(self, summary, link):
@@ -2114,6 +4136,29 @@ class App:
             # 初始化进度条
             self.update_progress(0, "准备开始处理...")
             
+            # 检测链接类型
+            platform = self._detect_platform(link)
+            
+            # 如果是小红书图文链接，使用图文分析流程
+            if platform == "小红书图文":
+                self.append_log(f"检测到小红书图文链接，使用图文分析流程...")
+                self._run_xiaohongshu_analysis(link, user_prompt, feishu_folder_path)
+                return
+            
+            # 如果是小红书视频链接，先尝试图文分析流程（内部会检测视频类型并跳转）
+            if platform == "小红书视频":
+                self.append_log(f"检测到小红书视频链接，使用图文分析流程（内部会检测视频类型）...")
+                # 调用图文分析流程，内部会检测是否为视频并跳转
+                self._run_xiaohongshu_analysis(link, user_prompt, feishu_folder_path)
+                return
+            
+            # 如果是微信公众号文章链接，使用文章分析流程
+            if platform == "微信公众号":
+                self.append_log(f"检测到微信公众号文章链接，使用文章分析流程...")
+                self._run_wechat_article_analysis(link, user_prompt, feishu_folder_path)
+                return
+            
+            # 否则使用视频处理流程
             platform = "视频"
             
             # 阶段1：下载视频
@@ -2366,9 +4411,13 @@ class App:
             self.append_log(f"视频下载耗时: {download_end - download_start:.2f}秒（异常）", "INFO")
             return None
 
-    # 步骤1：下载视频
+    # 步骤 1：下载视频
     def download_video(self, link: str):
         import time
+        import os
+        import subprocess
+        import re
+        import random
         download_start = time.time()
         
         try:
@@ -2388,25 +4437,22 @@ class App:
             with self.video_cache_lock:
                 if link in self.video_cache:
                     cached_file = self.video_cache[link]
-                    if os.path.exists(cached_file) and os.path.getsize(cached_file) > 0:
-                        self.append_log(f"使用缓存的视频文件: {cached_file}", "INFO")
-                        download_end = time.time()
-                        self.append_log(f"视频下载耗时: {download_end - download_start:.2f}秒（使用缓存）", "INFO")
-                        return cached_file
-                    else:
-                        # 缓存文件不存在或为空，删除缓存条目
-                        del self.video_cache[link]
-                        self.append_log("缓存视频文件不存在，重新下载", "INFO")
+                    with self.file_operation_lock:
+                        if os.path.exists(cached_file) and os.path.getsize(cached_file) > 0:
+                            self.append_log(f"使用缓存的视频文件: {cached_file}", "INFO")
+                            download_end = time.time()
+                            self.append_log(f"视频下载耗时: {download_end - download_start:.2f}秒（使用缓存）", "INFO")
+                            return cached_file
+                        else:
+                            # 缓存文件不存在或为空，删除缓存条目
+                            del self.video_cache[link]
+                            self.append_log("缓存视频文件不存在，重新下载", "INFO")
             
             # 使用yt-dlp工具下载视频
             import subprocess
             import os
             
             self.append_log("使用yt-dlp下载视频...", "INFO")
-            
-            # 获取当前目录下的视频文件数量，作为总序号
-            existing_videos = [f for f in os.listdir(VIDEO_DIR) if f.endswith('.mp4')]
-            total_count = len(existing_videos) + 1
             
             # 获取当前日期（月-日）
             current_date = time.strftime('%m-%d')
@@ -2416,8 +4462,11 @@ class App:
             doc_name_match = re.search(r'\d+', link.split('/')[-1])
             doc_name = doc_name_match.group(0) if doc_name_match else "unknown"
             
-            # 构建新的文件名：总记录序号-月-日-文档名称
-            new_filename = f"{total_count:03d}-{current_date}-{doc_name}.mp4"
+            # 构建唯一文件名：时间戳-随机数-文档名称
+            import random
+            timestamp = int(time.time() * 1000)
+            random_suffix = random.randint(100, 999)
+            new_filename = f"{timestamp}-{random_suffix}-{current_date}-{doc_name}.mp4"
             output_file = os.path.join(VIDEO_DIR, new_filename)
             
             # 从链接中提取 xsec_token
@@ -2438,7 +4487,7 @@ class App:
                 # 对于抖音链接，添加额外的参数以提高下载成功率
                 self.append_log("检测到抖音链接，使用专用配置...", "INFO")
             
-            # 构建yt-dlp命令，直接下载到目标文件夹（优化：减少不必要的参数）
+            # 构建yt-dlp命令，直接下载到目标文件夹
             cmd = [
                 "yt-dlp",
                 "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
@@ -2446,8 +4495,27 @@ class App:
                 "--no-check-certificate",
                 "--quiet",  # 静默模式，减少输出
                 "--no-warnings",  # 禁用警告
+                # 下载优化参数 - B站音视频分离格式，使用360p降低下载时间
+                "--format", "30016+30216/worst",  # 优先360p视频+音频，否则最低质量
+                "--merge-output-format", "mp4",  # 合并为mp4格式
+                "--concurrent-fragments", "5",  # 5个并发片段下载
+                "--buffer-size", "16K",  # 缓冲区大小
+                "--retries", "10",  # 重试次数
+                "--fragment-retries", "10",  # 片段重试次数
+                "--socket-timeout", "30",  #  socket超时
                 "-o", output_file,
             ]
+            
+            # 对于B站链接，尝试使用浏览器cookies提高下载速度
+            if "bilibili.com" in link:
+                self.append_log("检测到B站链接，尝试使用浏览器cookies...", "INFO")
+                try:
+                    # 尝试从Firefox获取cookies
+                    cmd.extend(["--cookies-from-browser", "firefox"])
+                    self.append_log("已添加Firefox cookies参数", "INFO")
+                except Exception as e:
+                    self.append_log(f"从Firefox获取cookies失败: {e}", "WARNING")
+                    self.append_log("提示：在Firefox浏览器中登录B站可以提高下载速度", "INFO")
             
             # 对于抖音链接，添加额外的参数以提高下载成功率
             if "douyin.com" in link or "tiktok.com" in link:
@@ -2505,26 +4573,29 @@ class App:
             while retry_count < max_retries:
                 try:
                     self.append_log(f"执行yt-dlp命令（尝试 {retry_count+1}/{max_retries}）...", "INFO")
-                    # 增加超时时间到60秒
-                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                    self.append_log(f"yt-dlp命令: {' '.join(cmd[:12])}...", "DEBUG")  # 记录命令
+                    # B站下载限速严重，增加超时时间到600秒（10分钟）
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
                     break
-                except subprocess.TimeoutExpired:
+                except subprocess.TimeoutExpired as te:
                     retry_count += 1
-                    self.append_log(f"yt-dlp执行超时，正在重试...（{retry_count}/{max_retries}）", "WARNING")
+                    self.append_log(f"yt-dlp执行超时（{te.timeout}秒），正在重试...（{retry_count}/{max_retries}）", "WARNING")
+                    self.append_log(f"超时详情: B站可能限速，建议登录B站账号或使用更低清晰度", "INFO")
                     if retry_count >= max_retries:
-                        self.append_log("yt-dlp执行多次超时", "ERROR")
+                        self.append_log("yt-dlp执行多次超时，B站下载限速严重", "ERROR")
+                        self.append_log("解决方案：1.在Firefox登录B站 2.使用其他视频源 3.降低视频清晰度", "ERROR")
                         download_end = time.time()
                         self.append_log(f"视频下载耗时: {download_end - download_start:.2f}秒（超时）", "INFO")
-                        # 直接返回None表示失败，不使用示例文件
                         return None
                 except Exception as e:
-                    self.append_log(f"yt-dlp执行异常：{e}", "ERROR")
+                    self.append_log(f"yt-dlp执行异常：{type(e).__name__}: {e}", "ERROR")
+                    import traceback
+                    self.append_log(f"异常详情: {traceback.format_exc()}", "DEBUG")
                     retry_count += 1
                     if retry_count >= max_retries:
                         self.append_log("yt-dlp执行失败", "ERROR")
                         download_end = time.time()
                         self.append_log(f"视频下载耗时: {download_end - download_start:.2f}秒（失败）", "INFO")
-                        # 直接返回None表示失败，不使用示例文件
                         return None
             
             if result.returncode == 0:
@@ -2853,10 +4924,16 @@ class App:
                 "ai_summary": "视频主要介绍了产品的基本信息、使用步骤和注意事项，帮助用户快速了解产品的核心功能和使用方法。"
             }
     
-    # 使用火山引擎 API 进行文本总结
+    # 使用火山引擎 API 进行文本总结（已停用，改用本地处理）
     def summarize_with_volcengine(self, text: str, user_prompt: str = ""):
         try:
             api_key = CONFIG.get("volcengine_api_key", VOLCENGINE_API_KEY)
+            
+            # 如果API密钥为空，使用本地简单总结
+            if not api_key or api_key == "":
+                self.append_log("API密钥未配置，使用本地简单总结...", "INFO")
+                return self._local_summary(text)
+            
             summary_prompt = CONFIG.get("summary_prompt", DEFAULT_CONFIG["summary_prompt"])
             system_prompt = CONFIG.get("system_prompt", DEFAULT_CONFIG["system_prompt"])
             rules = CONFIG.get("rules", DEFAULT_CONFIG["rules"])
@@ -2870,69 +4947,169 @@ class App:
                 subprocess.run(["pip", "install", "--upgrade", "volcengine-python-sdk[ark]"], check=True)
                 from volcenginesdkarkruntime import Ark
             
-            # 构建请求输入
-            input_content = [
+            # 构建请求输入（chat.completions格式）
+            messages = [
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
                 {
                     "role": "user",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": f"{system_prompt}\n\n分析规则：\n{rules}\n\n{summary_prompt.format(text=text)}"
-                        }
-                    ],
+                    "content": f"分析规则：\n{rules}\n\n{summary_prompt.format(text=text)}"
                 }
             ]
             
             # 如果有 user_prompt，添加到输入中
             if user_prompt:
-                input_content.append({
+                messages.append({
                     "role": "user",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": user_prompt
-                        }
-                    ],
+                    "content": user_prompt
                 })
             
             # 发送请求（移除重试机制，提高速度）
-            try:
-                self.append_log("调用火山引擎API进行总结...", "INFO")
-                
-                # 创建Ark客户端
-                client = Ark(
-                    base_url=VOLCENGINE_API_URL,
-                    api_key=api_key,
-                )
-                
-                # 发送测试请求
-                response = client.responses.create(
-                    model="doubao-seed-1-8-251228",
-                    input=input_content
-                )
-                
-                # 解析响应
-                if response.status == "completed" and response.output:
-                    for item in response.output:
-                        if item.type == "message" and item.role == "assistant":
-                            for content in item.content:
-                                if content.type == "output_text":
-                                    summary = content.text
+            # 重试机制 - 主用 Doubao-Seed-2.0-lite，备用 DeepSeek-V3
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    self.append_log(f"调用火山引擎API进行总结... (尝试 {attempt + 1}/{max_retries})", "INFO")
+                    
+                    # 创建Ark客户端（带超时设置）
+                    client = Ark(
+                        base_url=AI_CHAT_API_URL,  # 使用AI对话的API配置
+                        api_key=AI_CHAT_API_KEY,
+                        timeout=60.0,  # 60秒超时
+                    )
+                    
+                    # 发送请求 - 主用 Doubao-Seed-2.0-lite 模型
+                    response = client.chat.completions.create(
+                        model=AI_CHAT_MODEL,  # ep-20260217011531-7vs6q - Doubao-Seed-2.0-lite
+                        messages=messages,
+                        timeout=60.0,  # 60秒超时
+                    )
+                    
+                    # 解析响应
+                    if response.choices and len(response.choices) > 0:
+                        summary = response.choices[0].message.content
+                        if summary:
+                            self.append_log("火山引擎API调用成功", "INFO")
+                            return summary
+                    
+                    self.append_log("火山引擎API返回空结果或格式不正确", "ERROR")
+                    return None
+                    
+                except Exception as e:
+                    error_msg = str(e)
+                    error_type = type(e).__name__
+                    self.append_log(f"火山引擎 API 调用异常（尝试 {attempt + 1}/{max_retries}）：[{error_type}] {error_msg}", "ERROR")
+                    
+                    # 诊断连接错误
+                    if "Connection" in error_msg or "connection" in error_msg:
+                        self.append_log("诊断：网络连接失败，可能原因：", "ERROR")
+                        self.append_log("  1. 网络不稳定或防火墙拦截", "ERROR")
+                        self.append_log("  2. 火山引擎服务器暂时不可用", "ERROR")
+                        self.append_log("  3. API 接入点 ID 不正确或已失效", "ERROR")
+                        self.append_log(f"  当前主用接入点: {AI_CHAT_MODEL} (Doubao-Seed-2.0-lite)", "ERROR")
+                        self.append_log(f"  备用接入点: ep-20260317000232-vfdvn (DeepSeek-V3)", "ERROR")
+                        
+                        # 最后一次重试时，切换到备用模型 DeepSeek-V3
+                        if attempt == max_retries - 1:
+                            self.append_log("⚠ Doubao-Seed-2.0-lite 连接失败，尝试使用备用模型 DeepSeek-V3...", "WARNING")
+                            try:
+                                # 使用备用模型 DeepSeek-V3
+                                backup_client = Ark(
+                                    base_url=VOLCENGINE_API_URL,
+                                    api_key=VOLCENGINE_API_KEY,
+                                    timeout=30.0,
+                                )
+                                response = backup_client.chat.completions.create(
+                                    model="ep-20260317000232-vfdvn",  # DeepSeek-V3 备用
+                                    messages=messages,
+                                    timeout=30.0,
+                                )
+                                if response.choices and len(response.choices) > 0:
+                                    summary = response.choices[0].message.content
                                     if summary:
-                                        self.append_log("火山引擎API调用成功", "INFO")
+                                        self.append_log("✓ 备用模型 DeepSeek-V3 调用成功", "INFO")
                                         return summary
-                
-                self.append_log("火山引擎API返回空结果或格式不正确", "ERROR")
-                return None
-                
-            except Exception as e:
-                self.append_log(f"火山引擎 API 调用异常：{e}", "ERROR")
-                return None
+                            except Exception as backup_e:
+                                self.append_log(f"备用模型 DeepSeek-V3 也失败：{backup_e}", "ERROR")
+                        
+                        if attempt < max_retries - 1:
+                            import time
+                            wait_time = 2 ** attempt
+                            self.append_log(f"连接错误，{wait_time}秒后重试...", "INFO")
+                            time.sleep(wait_time)
+                            continue
+                    
+                    # 其他错误或最后一次重试失败
+                    if attempt == max_retries - 1:
+                        return None
+            
+            return None
         except Exception as e:
             self.append_log(f"火山引擎 API 调用异常：{e}", "ERROR")
             return None
+    
+    def _local_summary(self, text: str) -> str:
+        """本地简单总结（当API不可用时使用）"""
+        try:
+            # 提取前3个句子作为总结
+            sentences = text.split('。')[:3]
+            summary = '。'.join(sentences) + '。'
+            
+            # 如果文本太长，截断
+            if len(summary) > 500:
+                summary = summary[:500] + '...'
+            
+            # 添加简单标题（取第一句的前20字）
+            title = sentences[0][:20] if sentences else "内容总结"
+            
+            result = f"{title}\n\n总结：\n{summary}\n\n[注意：此为本地简单总结，未使用AI分析]"
+            self.append_log("本地简单总结完成", "INFO")
+            return result
+        except Exception as e:
+            self.append_log(f"本地总结失败：{e}", "ERROR")
+            return f"内容总结\n\n{text[:500]}...\n\n[注意：总结生成失败]"
 
-    # 步骤4：生成Markdown
+    # 步骤 3.5：处理已下载的视频（小红书视频专用）
+    def _process_downloaded_video(self, video_file: str, link: str, user_prompt: str = "", feishu_folder_path: str = None):
+        """处理已下载的视频（转写、AI 分析、生成 MD）"""
+        try:
+            # 阶段 2：语音转文字
+            self.update_task_status(link, "transcribe", "in_progress")
+            self.update_progress(40, "语音转文字 (上传/轮询)...")
+            result_data = self.speech_to_text(video_file, user_prompt)
+            if not result_data:
+                self.append_log("语音转文字失败，流程结束。")
+                self.update_task_status(link, "transcribe", "failed")
+                self.update_progress(0, "失败")
+                return
+            self.update_task_status(link, "transcribe", "completed", result_data.get("segments", []))
+
+            # 阶段 3：AI 分析
+            self.update_task_status(link, "ai_analysis", "in_progress")
+            self.update_progress(60, "使用 AI 进行文本分析...")
+            summary = result_data.get("ai_summary", "")
+            self.update_task_status(link, "ai_analysis", "completed", summary)
+            
+            # 阶段 4：生成 Markdown
+            self.update_task_status(link, "generate_md", "in_progress")
+            self.update_progress(80, "生成 Markdown 文档...")
+            md_file = self.generate_md(result_data, link, "视频")
+            if md_file:
+                self.append_log(f"✓ Markdown 文档生成成功：{md_file}")
+                self.update_task_status(link, "generate_md", "completed", md_file)
+                self.update_progress(100, "处理完成！")
+            else:
+                self.append_log("Markdown 文档生成失败")
+                self.update_task_status(link, "generate_md", "failed")
+                self.update_progress(0, "失败")
+        except Exception as e:
+            self.append_log(f"视频处理异常：{e}", "ERROR")
+            self.update_task_status(link, "generate_md", "failed")
+            self.update_progress(0, "失败")
+
+    # 步骤 4：生成 Markdown
     def generate_md(self, result_data: dict, link: str, platform: str):
         try:
             # 获取当前目录下的Markdown文件数量，作为总序号
@@ -2949,18 +5126,80 @@ class App:
             # 计算URL哈希（用于视频信息中显示）
             url_hash = hashlib.md5(link.encode()).hexdigest()[:8]
             
-            # 构建新的文件名：总记录序号-月-日-文档名称
-            md_path = os.path.join(OUTPUT_DIR, f"{total_count:03d}-{current_date}-{doc_name}_视频分析.md")
+            # 判断是视频还是图文
+            is_xiaohongshu_image = platform == "小红书" and result_data.get('image_analysis') is not None
+            is_wechat_article = platform == "微信公众号" and result_data.get('image_analysis') is not None
+            
+            if is_xiaohongshu_image or is_wechat_article:
+                # 图文格式（小红书或微信公众号）
+                md_path = os.path.join(OUTPUT_DIR, f"{total_count:03d}-{current_date}-{doc_name}_内容分析.md")
+                
+                # 构建原始内容
+                original_content = result_data.get('transcript', '')
+                
+                # 添加图片统计
+                expected_count = result_data.get('expected_image_count', 0)
+                actual_count = result_data.get('actual_image_count', 0)
+                image_stats = ""
+                if expected_count > 0:
+                    image_stats = f"\n## 图片统计\n- 应有图片数: {expected_count}\n- 实际提取: {actual_count}\n- 状态: {'全部提取成功' if actual_count >= expected_count else '部分图片可能未成功提取'}\n\n"
+                
+                # 添加每张图片的OCR文本（仅当原始内容中未包含图片内容时）
+                image_analysis = result_data.get('image_analysis', [])
+                image_ocr_content = ""
+                # 检查原始内容是否已经包含图片内容，避免重复
+                if image_analysis and "## 图片内容" not in original_content:
+                    image_ocr_content = "\n## 图片内容识别\n\n"
+                    for i, img_data in enumerate(image_analysis, 1):
+                        img_url = img_data.get('url', '')
+                        img_text = img_data.get('text', '')
+                        img_index = img_data.get('index', i)
+                        if img_text:
+                            image_ocr_content += f"### 图片 {img_index}\n"
+                            image_ocr_content += f"![图片{img_index}]({img_url})\n\n"
+                            image_ocr_content += f"**识别文本：**\n{img_text}\n\n"
+                
+                # 添加作者和发布时间（如果是微信公众号）
+                author_info = ""
+                if is_wechat_article:
+                    author = result_data.get('author', '')
+                    publish_time = result_data.get('publish_time', '')
+                    if author or publish_time:
+                        author_info = "## 文章信息\n"
+                        if author:
+                            author_info += f"- 作者: {author}\n"
+                        if publish_time:
+                            author_info += f"- 发布时间: {publish_time}\n"
+                        author_info += "\n"
+                
+                md = f"""{original_content}
+{author_info}{image_stats}{image_ocr_content}
+## AI分析摘要
+# {platform}内容分析
+## 内容信息
+- 分析时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+- 原始链接: {link}
+- 平台: {platform}
+- 类型: 图文
 
-            segs = result_data.get('segments', [])
-            transcript_lines = []
-            for seg in segs:
-                tstr = time.strftime('%H:%M:%S', time.gmtime(seg.get('start_time', 0)))
-                transcript_lines.append(f"- [{tstr}] {seg.get('text','')}")
-            transcript = "\n".join(transcript_lines)
-            summary = result_data.get('ai_summary', result_data.get('summary', ''))
+{summary}
 
-            md = f"""# {platform}视频内容分析
+---
+*由视频转文字处理工具自动生成*
+"""
+            else:
+                # 视频格式
+                md_path = os.path.join(OUTPUT_DIR, f"{total_count:03d}-{current_date}-{doc_name}_视频分析.md")
+
+                segs = result_data.get('segments', [])
+                transcript_lines = []
+                for seg in segs:
+                    tstr = time.strftime('%H:%M:%S', time.gmtime(seg.get('start_time', 0)))
+                    transcript_lines.append(f"- [{tstr}] {seg.get('text','')}")
+                transcript = "\n".join(transcript_lines)
+                summary = result_data.get('ai_summary', result_data.get('summary', ''))
+
+                md = f"""# {platform}视频内容分析
 
 ## 视频信息
 - 分析时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
@@ -3023,8 +5262,9 @@ class App:
         config_window.grab_set()
         self.root.wait_window(config_window)
     
-    # 打开AI配置窗口
+    # 打开AI配置窗口 - Prompt配置（原来的配置）
     def open_ai_config_window(self):
+        """打开AI Prompt配置窗口"""
         ai_config_window = tk.Toplevel(self.root)
         ai_config_window.title("AI配置 - 视频转文字处理工具")
         ai_config_window.geometry("1000x600")
@@ -3188,62 +5428,6 @@ class App:
             background="#ffffff"
         ).pack(anchor=tk.W, padx=15, pady=(0, 10))
         
-        # 文件上传区域
-        file_frame = tk.Frame(main_container, bg="#ffffff", bd=0, relief=tk.RAISED)
-        file_frame.pack(fill=tk.X, pady=(0, 20))
-        file_frame.configure(bg="#ffffff", highlightbackground="#0066cc", highlightthickness=1, borderwidth=0)
-        
-        file_title_frame = tk.Frame(file_frame, bg="#ffffff")
-        file_title_frame.pack(fill=tk.X, padx=15, pady=(15, 10))
-        
-        file_title = tk.Label(
-            file_title_frame, 
-            text="批量导入配置", 
-            font=("微软雅黑", 12, "bold"),
-            foreground="#0066cc",
-            bg="#ffffff"
-        )
-        file_title.pack(anchor=tk.W)
-        
-        file_desc = tk.Label(
-            file_title_frame, 
-            text="从文件中导入所有配置选项", 
-            font=("微软雅黑", 9),
-            foreground="#666",
-            bg="#ffffff"
-        )
-        file_desc.pack(anchor=tk.W, pady=(5, 0))
-        
-        file_btn_frame = tk.Frame(file_frame, bg="#ffffff")
-        file_btn_frame.pack(fill=tk.X, padx=15, pady=(0, 15))
-        
-        def import_from_file():
-            file_path = filedialog.askopenfilename(
-                title="选择配置文件",
-                filetypes=[("文本文件", "*.txt"), ("Markdown文件", "*.md"), ("所有文件", "*.*")]
-            )
-            if file_path:
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                    # 简单解析：按空行分割为三个部分
-                    parts = content.split('\n\n\n')
-                    if len(parts) >= 3:
-                        system_prompt_text.delete(1.0, tk.END)
-                        system_prompt_text.insert(tk.END, parts[0].strip())
-                        rules_text.delete(1.0, tk.END)
-                        rules_text.insert(tk.END, parts[1].strip())
-                        output_template_text.delete(1.0, tk.END)
-                        output_template_text.insert(tk.END, parts[2].strip())
-                        messagebox.showinfo("成功", "配置已从文件导入")
-                    else:
-                        messagebox.showwarning("提示", "文件格式不正确，请确保文件包含system prompt、rules和output template三个部分，用三个空行分隔")
-                except Exception as e:
-                    messagebox.showerror("错误", f"导入失败：{e}")
-        
-        import_btn = ttk.Button(file_btn_frame, text="选择文件", command=import_from_file)
-        import_btn.pack(side=tk.LEFT, padx=5)
-        
         # System Prompt 配置
         system_prompt_frame = tk.Frame(main_container, bg="#ffffff", bd=0, relief=tk.RAISED)
         system_prompt_frame.pack(fill=tk.X, pady=(0, 15))
@@ -3269,27 +5453,6 @@ class App:
             bg="#ffffff"
         )
         system_desc.pack(side=tk.LEFT, padx=10)
-        
-        system_prompt_control_frame = tk.Frame(system_prompt_frame, bg="#ffffff")
-        system_prompt_control_frame.pack(fill=tk.X, padx=15, pady=(0, 10))
-        
-        def import_system_prompt():
-            file_path = filedialog.askopenfilename(
-                title="选择System Prompt文件",
-                filetypes=[("文本文件", "*.txt"), ("Markdown文件", "*.md"), ("所有文件", "*.*")]
-            )
-            if file_path:
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                    system_prompt_text.delete(1.0, tk.END)
-                    system_prompt_text.insert(tk.END, content.strip())
-                    messagebox.showinfo("成功", "System Prompt已从文件导入")
-                except Exception as e:
-                    messagebox.showerror("错误", f"导入失败：{e}")
-        
-        import_system_btn = ttk.Button(system_prompt_control_frame, text="导入文件", command=import_system_prompt)
-        import_system_btn.pack(side=tk.RIGHT)
         
         system_prompt_text = scrolledtext.ScrolledText(
             system_prompt_frame, 
@@ -3328,27 +5491,6 @@ class App:
         )
         rules_desc.pack(side=tk.LEFT, padx=10)
         
-        rules_control_frame = tk.Frame(rules_frame, bg="#ffffff")
-        rules_control_frame.pack(fill=tk.X, padx=15, pady=(0, 10))
-        
-        def import_rules():
-            file_path = filedialog.askopenfilename(
-                title="选择Rules文件",
-                filetypes=[("文本文件", "*.txt"), ("Markdown文件", "*.md"), ("所有文件", "*.*")]
-            )
-            if file_path:
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                    rules_text.delete(1.0, tk.END)
-                    rules_text.insert(tk.END, content.strip())
-                    messagebox.showinfo("成功", "Rules已从文件导入")
-                except Exception as e:
-                    messagebox.showerror("错误", f"导入失败：{e}")
-        
-        import_rules_btn = ttk.Button(rules_control_frame, text="导入文件", command=import_rules)
-        import_rules_btn.pack(side=tk.RIGHT)
-        
         rules_text = scrolledtext.ScrolledText(
             rules_frame, 
             height=5, 
@@ -3386,27 +5528,6 @@ class App:
         )
         template_desc.pack(side=tk.LEFT, padx=10)
         
-        output_template_control_frame = tk.Frame(output_template_frame, bg="#ffffff")
-        output_template_control_frame.pack(fill=tk.X, padx=15, pady=(0, 10))
-        
-        def import_output_template():
-            file_path = filedialog.askopenfilename(
-                title="选择产出模板文件",
-                filetypes=[("Markdown文件", "*.md"), ("文本文件", "*.txt"), ("所有文件", "*.*")]
-            )
-            if file_path:
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                    output_template_text.delete(1.0, tk.END)
-                    output_template_text.insert(tk.END, content.strip())
-                    messagebox.showinfo("成功", "产出模板已从文件导入")
-                except Exception as e:
-                    messagebox.showerror("错误", f"导入失败：{e}")
-        
-        import_template_btn = ttk.Button(output_template_control_frame, text="导入文件", command=import_output_template)
-        import_template_btn.pack(side=tk.RIGHT)
-        
         output_template_text = scrolledtext.ScrolledText(
             output_template_frame, 
             height=8, 
@@ -3443,27 +5564,6 @@ class App:
             bg="#ffffff"
         )
         user_desc.pack(side=tk.LEFT, padx=10)
-        
-        user_prompt_control_frame = tk.Frame(user_prompt_frame, bg="#ffffff")
-        user_prompt_control_frame.pack(fill=tk.X, padx=15, pady=(0, 10))
-        
-        def import_user_prompt():
-            file_path = filedialog.askopenfilename(
-                title="选择User Prompt文件",
-                filetypes=[("文本文件", "*.txt"), ("Markdown文件", "*.md"), ("所有文件", "*.*")]
-            )
-            if file_path:
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                    user_prompt_text.delete(1.0, tk.END)
-                    user_prompt_text.insert(tk.END, content.strip())
-                    messagebox.showinfo("成功", "User Prompt已从文件导入")
-                except Exception as e:
-                    messagebox.showerror("错误", f"导入失败：{e}")
-        
-        import_user_btn = ttk.Button(user_prompt_control_frame, text="导入文件", command=import_user_prompt)
-        import_user_btn.pack(side=tk.RIGHT)
         
         user_prompt_text = scrolledtext.ScrolledText(
             user_prompt_frame, 
@@ -3511,6 +5611,18 @@ class App:
         ai_config_window.transient(self.root)
         ai_config_window.grab_set()
         self.root.wait_window(ai_config_window)
+    
+    # 打开AI API配置窗口（新的API配置界面）
+    def open_ai_api_config_window(self):
+        """打开AI API配置窗口（API Key、Model等）"""
+        if AI_API_CONFIG_AVAILABLE:
+            open_ai_api_config_window(self.root)
+        else:
+            messagebox.showwarning(
+                "模块未加载",
+                "AI API配置模块(ai_api_config_gui)未找到，请确保文件存在。\n\n" +
+                "请检查文件: ai_api_config_gui.py"
+            )
     
     def open_thread_config_window(self):
         """打开线程配置窗口"""

@@ -1,0 +1,149 @@
+{
+  "chunks": [
+    {
+      "content": "# JSON 处理方案优化总结\n\n---\n\n## 一、调用方式对比\n\n| 方式 | 优点 | 缺点 | 适用场景 |\n|------|------|------|----------|\n| **Function Call / Structured Outputs** | 结构化、可靠、原生支持、格式保证 | 需要模型支持、需预定义Schema | 固定格式提取、表单填充、OCR结构化 |\n| **String 解析** | 通用、灵活、无需预定义 | 需要后处理、易出错、需兜底 | 开放式对话、探索性场景 |\n\n---\n\n## 二、方案演进路径\n\n### 阶段1：软约束（Prompt优化）\n- **方法**：Prompt约束 + Few Shot示例\n- **效果**：成功率 70%-80%\n- **局限**：无法根治格式错误\n\n### 阶段2：硬约束（推荐）\n- **方法**：Structured Outputs / Function Call\n- **效果**：格式正确率接近100%\n- **原理**：结构化输出模式 × FSM（有限状态机）\n\n---\n\n## 三、Structur",
+      "file": "JSON处理方案优化版.txt",
+      "start": 0,
+      "end": 500
+    },
+    {
+      "content": "- **原理**：结构化输出模式 × FSM（有限状态机）\n\n---\n\n## 三、Structured Outputs（结构化输出）\n\n### 是什么\n大模型API原生功能，通过JSON Schema或类定义强制约束模型输出格式，从根本上保证输出格式正确。\n\n### 核心要点\n- **治本方案**：API层面强制约束，错误率接近零\n- **自动解析**：直接返回对象，无需手动解析JSON\n- **类型安全**：字段类型自动校验\n- **多平台支持**：OpenAI、通义千问、文心一言、Claude等\n- **适用场景**：字段确定、格式严格的结构化提取任务\n\n### 技术原理\n```\nJSON Object Schema → FSM状态机 → 约束解码 → 强制合规输出\n```\n\n**注意事项**：\n- 嵌套层级超过3层会导致FSM状态数指数级增长（状态机爆炸风险）\n- 优先使用私有化部署/本地模型，可控性更强\n\n### 实现方式\n```python\nfrom pydantic import BaseModel\nfrom openai import OpenAI\n\n# 1.",
+      "file": "JSON处理方案优化版.txt",
+      "start": 450,
+      "end": 945
+    },
+    {
+      "content": "c import BaseModel\nfrom openai import OpenAI\n\n# 1. 定义Schema\nclass Product(BaseModel):\n    name: str\n    price: float\n\n# 2. 强制约束输出\nresponse = client.beta.chat.completions.parse(\n    model=\"gpt-4o\",\n    messages=[{\"role\": \"user\", \"content\": \"生成商品信息\"}],\n    response_format=Product\n)\n\n# 3. 直接拿到对象\nproduct = response.choices[0].message.parsed\n```\n\n---\n\n## 四、Tool Calling模式\n\n### 是什么\n架构设计模式，将\"普通文本回复\"和\"结构化数据\"物理分离。",
+      "file": "JSON处理方案优化版.txt",
+      "start": 895,
+      "end": 1302
+    },
+    {
+      "content": "l Calling模式\n\n### 是什么\n架构设计模式，将\"普通文本回复\"和\"结构化数据\"物理分离。\n\n### 核心要点\n- **关注点分离**：文本直接流式输出，JSON仅用于结构化数据\n- **长内容优势**：避免大JSON转义灾难\n- **错误隔离**：Tool Call出错不影响已显示的文本\n- **适用场景**：长文本回复 + 图文混排\n\n### 实现方式\n```python\n# 定义Tool\ntools = [{\n    \"type\": \"function\",\n    \"function\": {\n        \"name\": \"insert_card\",\n        \"description\": \"展示数据卡片时调用\",\n        \"parameters\": {\n            \"type\": \"object\",\n            \"properties\": {\n                \"title\": {\"type\": \"string\"},\n                \"data\": {\"type\": \"object\"}",
+      "file": "JSON处理方案优化版.txt",
+      "start": 1252,
+      "end": 1752
+    },
+    {
+      "content": "\"data\": {\"type\": \"object\"}\n            }\n        }\n    }\n}]\n\n# 前端分别处理\nif (response.tool_calls) {\n    renderCard(response.tool_calls[0].arguments);  // 渲染卡片\n} else {\n    renderMarkdown(response.content);               // 渲染文本\n}\n```\n\n---\n\n## 五、错误处理策略\n\n| 层级 | 策略 | 说明 |\n|------|------|------|\n| 1 | **Schema校验** | 返回数据是否符合预定义格式 |\n| 2 | **自修复循环** | 校验失败时触发重试，自动修正 |\n| 3 | **模型切换** | 换用结构化输出能力更强的模型 |\n| 4 | **兜底显示** | 解析失败时显示原始文本，不白屏 |\n\n---\n\n## 六、选型决策树\n\n```\n是否需要结构化输出？",
+      "file": "JSON处理方案优化版.txt",
+      "start": 1702,
+      "end": 2182
+    },
+    {
+      "content": "解析失败时显示原始文本，不白屏 |\n\n---\n\n## 六、选型决策树\n\n```\n是否需要结构化输出？\n├── 否 → 普通Prompt\n└── 是 → 字段是否确定？\n    ├── 否 → String解析 + 后处理\n    └── 是 → 内容是否很长？\n        ├── 是 → Tool Calling（文本JSON分离）\n        └── 否 → Structured Outputs（强制约束）\n```\n\n---\n\n## 七、核心结论\n\n1. **Structured Outputs**：解决\"格式错误\"问题，但需预定义Schema，适合固定格式场景\n2. **Tool Calling**：解决\"转义灾难\"问题，适合长文本+结构化数据混排\n3. **String解析**：最灵活，但需自行处理格式错误\n4. **终极兜底**：任何方案都可能失败，必须准备降级策略",
+      "file": "JSON处理方案优化版.txt",
+      "start": 2132,
+      "end": 2529
+    },
+    {
+      "content": "泛型是编译时的语法糖（编译机制而已，跟int a={1}一样）\n类型擦除是为了向前兼容,旧代码处理逻辑能够认识 泛型类，不排异\n编译器用类型检查替代运行时类型信息\n本质上是用编译时检查换取运行时灵活性和安全\n用一句话总结：泛型是编译器的\"谎言\"，它在编译时做严格的类型检查，运行时却假装不知道类型，通过自动插入类型转换来维持类型安全。",
+      "file": "泛型理解.txt",
+      "start": 0,
+      "end": 167
+    },
+    {
+      "content": "根据提供的参考资料，以下是通过 MCP 在指定知识库节点下创建 MD 格式文档的完整实现路径，包括通过名称映射查询文件夹 token 的步骤：\n一、MCP 相关文档参考\nMCP 开发者调用远程服务文档：https://go.feishu.cn/s/6BAZsBdwQLu\n（包含 MCP 工具调用流程、权限要求、认证方式等核心信息）\n二、实现路径：通过 MCP 创建 MD 格式文档\n步骤 1：获取目标知识库节点的 node_token\n从 URL 提取：目标文件夹 URL https://dvnrviz26l5.feishu.cn/wiki/YhzqwByshiRNWKk0T1GcxFHmn6b 中，YhzqwByshiRNWKk0T1GcxFHmn6b 即为 node_token（知识库节点标识）。\n步骤 2：通过 MCP 工具查询文件夹 token（基于名称映射）\n若需通过名称层级（如 “根目录> 部门文档 > 技术部”）查询目标文件夹的 token，使用 MCP 的 list-docs 工具：\n工具功能：获取指定节点下的子文件 / 文件夹列表，支持按名称匹配。",
+      "file": "飞书云文档MCP工具调用教程.txt",
+      "start": 0,
+      "end": 489
+    },
+    {
+      "content": "的 list-docs 工具：\n工具功能：获取指定节点下的子文件 / 文件夹列表，支持按名称匹配。\n调用示例（MCP 请求）：\nhttp\nPOST https://mcp.feishu.cn/mcp\nX-Lark-MCP-UAT: <user_access_token>  # 或 X-Lark-MCP-TAT: <tenant_access_token>\nContent-Type: application/json\nX-Lark-MCP-Allowed-Tools: list-docs\n{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"list-docs\",\n    \"arguments\": {\n      \"nodeToken\": \"YhzqwByshiRNWKk0T1GcxFHmn6b\",  // 步骤 1 提取的 node_token\n      \"pageSize\": 100\n    }\n  }\n}\n响应解析：返回结果包含文件夹 name 和 token，",
+      "file": "飞书云文档MCP工具调用教程.txt",
+      "start": 439,
+      "end": 939
+    },
+    {
+      "content": "ize\": 100\n    }\n  }\n}\n响应解析：返回结果包含文件夹 name 和 token，通过名称匹配目标文件夹（如 “技术部”），提取其 token。\n步骤 3：通过 MCP 创建 MD 格式文档\n使用 MCP 的 create-doc 工具在目标文件夹下创建 MD 文档：\n工具功能：支持创建新版文档（docx），并可传入 MD 格式内容。\n调用示例（MCP 请求）：\nhttp\nPOST https://mcp.feishu.cn/mcp\nX-Lark-MCP-UAT: <user_access_token>\nContent-Type: application/json\nX-Lark-MCP-Allowed-Tools: create-doc\n{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 2,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"create-doc\",\n    \"arguments\": {\n      \"parentNodeToken\": \"YhzqwByshiRNWKk0T1GcxFHm",
+      "file": "飞书云文档MCP工具调用教程.txt",
+      "start": 889,
+      "end": 1389
+    },
+    {
+      "content": "\"parentNodeToken\": \"YhzqwByshiRNWKk0T1GcxFHmn6b\",  // 目标文件夹 node_token\n      \"title\": \"新MD文档\",  // 文档标题\n      \"content\": \"# 这是MD格式内容\\n- 列表项1\\n- 列表项2\",  // MD格式内容\n      \"format\": \"markdown\"  // 指定内容格式为 MD\n    }\n  }\n}\n响应结果：返回新文档的 document_id 和 url，表示创建成功。\n三、关键说明\nMCP 工具权限要求：\n确保应用已申请 wiki:wiki（知识库权限）和 docs:doc（文档编辑权限），参考 MCP 权限说明。\n使用 user_access_token 或 tenant_access_token 初始化 MCP 会话，确保身份拥有目标文件夹的编辑权限。",
+      "file": "飞书云文档MCP工具调用教程.txt",
+      "start": 1339,
+      "end": 1745
+    },
+    {
+      "content": "或 tenant_access_token 初始化 MCP 会话，确保身份拥有目标文件夹的编辑权限。\n名称映射查询逻辑：\n若目标文件夹在多级子目录下（如 “技术部> 项目计划”），需多次调用 list-docs 工具：\n先用根节点 node_token 查询一级子文件夹，匹配 “技术部” 并获取其 token；\n再用 “技术部” 的 token 作为 nodeToken，查询下一级文件夹，匹配 “项目计划”。\nMD 格式支持：\nMCP 的 create-doc 工具支持直接传入 MD 格式内容，飞书会自动转换为 docx 格式文档（飞书文档支持 MD 语法解析）。\n四、总结流程\n提取节点 token：从目标 URL 中获取 node_token。\n查询文件夹：调用 list-docs 工具，通过名称匹配获取目标文件夹的 token（如需多级查询则重复调用）。\n创建 MD 文档：调用 create-doc 工具，传入 parentNodeToken、标题和 MD 内容。",
+      "file": "飞书云文档MCP工具调用教程.txt",
+      "start": 1695,
+      "end": 2135
+    },
+    {
+      "content": "文档：调用 create-doc 工具，传入 parentNodeToken、标题和 MD 内容。\n所有操作通过 MCP 工具完成，无需直接调用云文档 OpenAPI，AI 可通过自然语言指令触发工具调用，简化技术实现。\n你应该是要提供给我 MCP 客户端连接方式，MCP 客户端调用 文档库 拆查询 TOKEN，创建文档，CRUD 文档的工具和方法才对是吧，按照这些思路给我完整的我用 AI 调用你们 MCP 的操作和代码流程\n根据提供的参考资料，以下是通过 AI 调用飞书 MCP 服务实现文档库查询、文档创建及 CRUD 操作的完整流程，包括 MCP 客户端连接方式和工具调用方法：\n一、MCP 客户端连接准备\n1. 开发前准备\n创建自建应用：在 飞书开放平台创建企业自建应用，申请以下权限：\n云文档相关：docs:document:readonly、docs:document:write_only、wiki:wiki:readonly\n用户相关（可选）：contact:user.",
+      "file": "飞书云文档MCP工具调用教程.txt",
+      "start": 2085,
+      "end": 2531
+    },
+    {
+      "content": "ite_only、wiki:wiki:readonly\n用户相关（可选）：contact:user.base:readonly\n获取访问凭证：\nUser Access Token (UAT)：代表用户身份，参考 获取 user_access_token\nTenant Access Token (TAT)：代表应用身份，参考 获取 tenant_access_token\n2. MCP 客户端连接方式\n所有 MCP 请求通过 统一端点 发送，采用 JSON-RPC 2.0 协议：\n请求 URL：https://mcp.feishu.cn/mcp\nHTTP 方法：POST\n请求头：\nX-Lark-MCP-UAT 或 X-Lark-MCP-TAT：认证凭证（二选一）\nContent-Type：固定为 application/json\nX-Lark-MCP-Allowed-Tools：允许调用的工具列表（如 list-docs,create-doc,fetch-doc,update-doc）\n二、AI 调用 MCP 工具实现文档库操作\n步骤 1：初始化 MCP 会话\n建立连接并验证凭证，返回会话",
+      "file": "飞书云文档MCP工具调用教程.txt",
+      "start": 2481,
+      "end": 2981
+    },
+    {
+      "content": "AI 调用 MCP 工具实现文档库操作\n步骤 1：初始化 MCP 会话\n建立连接并验证凭证，返回会话信息：\nhttp\nPOST https://mcp.feishu.cn/mcp\nX-Lark-MCP-UAT: u-gxxxxxxxxxxxxxxxxxxxxx  # 替换为实际 UAT\nContent-Type: application/json\nX-Lark-MCP-Allowed-Tools: list-docs,create-doc,fetch-doc,update-doc,add-comments\n{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"initialize\"\n}\n响应示例：\njson\n{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"result\": {\n    \"protocolVersion\": \"2024-11-05\",\n    \"serverInfo\": {\n      \"name\": \"Lark MCP Server\",\n      \"version\": \"1.0.",
+      "file": "飞书云文档MCP工具调用教程.txt",
+      "start": 2931,
+      "end": 3417
+    },
+    {
+      "content": "\"name\": \"Lark MCP Server\",\n      \"version\": \"1.0.0\"\n    }\n  }\n}\n步骤 2：查询文档库文件夹 Token（基于名称映射）\n使用 list-docs 工具获取指定知识空间节点下的文件夹列表，通过名称匹配目标文件夹：\nhttp\nPOST https://mcp.feishu.cn/mcp\nX-Lark-MCP-UAT: u-gxxxxxxxxxxxxxxxxxxxxx\nContent-Type: application/json\nX-Lark-MCP-Allowed-Tools: list-docs,create-doc,fetch-doc,update-doc,add-comments\n{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 2,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"list-docs\",\n    \"arguments\": {\n      \"nodeToken\": \"YhzqwByshiRNWKk0T1GcxFHmn6b\",  // 目",
+      "file": "飞书云文档MCP工具调用教程.txt",
+      "start": 3367,
+      "end": 3867
+    },
+    {
+      "content": "\"nodeToken\": \"YhzqwByshiRNWKk0T1GcxFHmn6b\",  // 目标知识库节点 Token（从 URL 提取）\n      \"pageSize\": 100\n    }\n  }\n}\n响应解析：从返回的 content 中提取文件夹 name 和 token，例如：\njson\n{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 2,\n  \"result\": {\n    \"content\": [\n      {\n        \"type\": \"text\",\n        \"text\": \"{\\\"items\\\": [{\\\"token\\\": \\\"fld_xxx\\\", \\\"name\\\": \\\"技术部\\\", \\\"type\\\": \\\"folder\\\"}, ...]}\"\n      }\n    ]\n  }\n}\n步骤 3：创建 MD 格式文档\n使用 create-doc 工具在目标文件夹下创建文档，支持 MD 格式内容：\nhttp\nPOST https://mcp.feishu.",
+      "file": "飞书云文档MCP工具调用教程.txt",
+      "start": 3817,
+      "end": 4276
+    },
+    {
+      "content": "文件夹下创建文档，支持 MD 格式内容：\nhttp\nPOST https://mcp.feishu.cn/mcp\nX-Lark-MCP-UAT: u-gxxxxxxxxxxxxxxxxxxxxx\nContent-Type: application/json\nX-Lark-MCP-Allowed-Tools: list-docs,create-doc,fetch-doc,update-doc,add-comments\n{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 3,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"create-doc\",\n    \"arguments\": {\n      \"parentNodeToken\": \"YhzqwByshiRNWKk0T1GcxFHmn6b\",  // 目标文件夹 nodeToken\n      \"title\": \"AI生成的MD文档\",\n      \"content\": \"# 标题\\n- 列表项1\\n- 列表项2\\n**加粗文本**\",  // MD格式内容",
+      "file": "飞书云文档MCP工具调用教程.txt",
+      "start": 4226,
+      "end": 4726
+    },
+    {
+      "content": "# 标题\\n- 列表项1\\n- 列表项2\\n**加粗文本**\",  // MD格式内容\n      \"format\": \"markdown\"\n    }\n  }\n}\n响应示例：返回新文档的 documentId 和 url。\n步骤 4：查询文档内容（CRUD - Read）\n使用 fetch-doc 工具获取文档内容：\nhttp\nPOST https://mcp.feishu.cn/mcp\nX-Lark-MCP-UAT: u-gxxxxxxxxxxxxxxxxxxxxx\nContent-Type: application/json\nX-Lark-MCP-Allowed-Tools: list-docs,create-doc,fetch-doc,update-doc,add-comments\n{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 4,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"fetch-doc\",\n    \"arguments\": {\n      \"docID\": \"doxxxxxxxxxxxxxxx",
+      "file": "飞书云文档MCP工具调用教程.txt",
+      "start": 4676,
+      "end": 5176
+    },
+    {
+      "content": "\"arguments\": {\n      \"docID\": \"doxxxxxxxxxxxxxxx\"  // 从 create-doc 响应中获取的 documentId\n    }\n  }\n}\n步骤 5：更新文档内容（CRUD - Update）\n使用 update-doc 工具追加或修改文档内容：\nhttp\nPOST https://mcp.feishu.cn/mcp\nX-Lark-MCP-UAT: u-gxxxxxxxxxxxxxxxxxxxxx\nContent-Type: application/json\nX-Lark-MCP-Allowed-Tools: list-docs,create-doc,fetch-doc,update-doc,add-comments\n{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 5,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"update-doc\",\n    \"arguments\": {\n      \"docID\": \"doxxxxxxxxxxxxxxx\",",
+      "file": "飞书云文档MCP工具调用教程.txt",
+      "start": 5126,
+      "end": 5626
+    },
+    {
+      "content": "ments\": {\n      \"docID\": \"doxxxxxxxxxxxxxxx\",\n      \"content\": \"\\n## 新增章节\\n这是通过 MCP 更新的内容\",  // 追加内容\n      \"position\": \"end\"  // 可选：\"start\" 或指定段落位置\n    }\n  }\n}\n步骤 6：添加文档评论（CRUD - Create 评论）\n使用 add-comments 工具添加全文评论：\nhttp\nPOST https://mcp.feishu.cn/mcp\nX-Lark-MCP-UAT: u-gxxxxxxxxxxxxxxxxxxxxx\nContent-Type: application/json\nX-Lark-MCP-Allowed-Tools: list-docs,create-doc,fetch-doc,update-doc,add-comments\n{\n  \"jsonrpc\": \"2.",
+      "file": "飞书云文档MCP工具调用教程.txt",
+      "start": 5576,
+      "end": 5999
+    },
+    {
+      "content": "tch-doc,update-doc,add-comments\n{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 6,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"add-comments\",\n    \"arguments\": {\n      \"docID\": \"doxxxxxxxxxxxxxxx\",\n      \"content\": \"文档已审核，内容无误\"\n    }\n  }\n}\n三、关键工具与方法总结\n操作类型    MCP 工具名称    功能描述    核心参数\n查询文件夹   list-docs   获取指定节点下的文档 / 文件夹列表  nodeToken、pageSize\n创建文档    create-doc  创建 MD 格式文档（自动转为 docx）   parentNodeToken、title、content\n读取文档    fetch-doc   获取文档完整内容    docID\n更新文档    update-doc  追加或修改文档内容   docID、content、position",
+      "file": "飞书云文档MCP工具调用教程.txt",
+      "start": 5949,
+      "end": 6449
+    },
+    {
+      "content": "update-doc  追加或修改文档内容   docID、content、position\n添加评论    add-comments    添加全文评论  \nUser Access Token (UAT)：\nTenant Access Token (TAT) 在哪获得\n根据提供的参考资料，获取 User Access Token (UAT) 和 Tenant Access Token (TAT) 的方式如下：\n一、获取 Tenant Access Token (TAT)（应用身份凭证）\n适用场景：以应用身份调用 API，无需用户授权，数据权限受应用通讯录权限范围限制。\n获取方式：\n自建应用：\n调用接口：自建应用获取 tenant_access_token\n请求 URL：https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal\n请求体：\njson\n{\n  \"app_id\": \"cli_xxxxxx\",  // 应用唯一标识，从开发者后台获取\n  \"app_secret\": \"xxxxxx\"   /",
+      "file": "飞书云文档MCP工具调用教程.txt",
+      "start": 6399,
+      "end": 6899
+    },
+    {
+      "content": ",  // 应用唯一标识，从开发者后台获取\n  \"app_secret\": \"xxxxxx\"   // 应用秘钥，从开发者后台获取\n}\n响应示例：\njson\n{\n  \"code\": 0,\n  \"msg\": \"success\",\n  \"tenant_access_token\": \"t-xxxxxx\",  // TAT 凭证\n  \"expire\": 7200  // 有效期（秒）\n}",
+      "file": "飞书云文档MCP工具调用教程.txt",
+      "start": 6849,
+      "end": 7040
+    }
+  ],
+  "count": 24
+}

@@ -1,0 +1,20 @@
+[
+  {
+    "file_path": "F:/java/AIOPS/SuperBizAgent-release-2026-01-02/demo_wendanghua/output/JSON处理方案优化版.txt",
+    "file_name": "JSON处理方案优化版.txt",
+    "file_type": ".txt",
+    "file_size": 4.05859375,
+    "chunk_count": 7,
+    "added_at": "2026-03-17 01:19:52",
+    "vector_bound": false
+  },
+  {
+    "file_path": "F:/java/AIOPS/AIOPS 项目知识库.txt",
+    "file_name": "AIOPS 项目知识库.txt",
+    "file_type": ".txt",
+    "file_size": 163.921875,
+    "chunk_count": 101,
+    "added_at": "2026-03-30 18:18:46",
+    "vector_bound": false
+  }
+]

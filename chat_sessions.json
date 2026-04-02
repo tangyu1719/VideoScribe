@@ -1,0 +1,269 @@
+[
+  {
+    "id": "session_1773762735675",
+    "title": "新对话",
+    "created_at": "2026-03-17T23:52:15.675102",
+    "messages": []
+  },
+  {
+    "id": "session_1773669635347",
+    "title": "新对话",
+    "created_at": "2026-03-16T22:00:35.347165",
+    "messages": []
+  },
+  {
+    "id": "session_1773660250430",
+    "title": "新对话",
+    "created_at": "2026-03-16T19:24:10.430183",
+    "messages": []
+  },
+  {
+    "id": "session_1773660249788",
+    "title": "新对话",
+    "created_at": "2026-03-16T19:24:09.788418",
+    "messages": []
+  },
+  {
+    "id": "session_1772867624170",
+    "title": "你把在知识库中泛型的相关文件原文输出给我",
+    "created_at": "2026-03-07T15:13:44.170938",
+    "messages": [
+      {
+        "role": "user",
+        "content": "你把在知识库中泛型的相关文件原文输出给我",
+        "images": [],
+        "timestamp": "2026-03-16T18:22:40.869334"
+      },
+      {
+        "role": "assistant",
+        "content": "以下是知识库中关于泛型的相关原文内容：\n泛型是编译时的语法糖（编译机制而已，跟int a={1}一样）\n类型擦除是为了向前兼容,旧代码处理逻辑能够认识 泛型类，不排异\n编译器用类型检查替代运行时类型信息\n本质上是用编译时检查换取运行时灵活性和安全\n用一句话总结：泛型是编译器的\"谎言\"，它在编译时做严格的类型检查，运行时却假装不知道类型，通过自动插入类型转换来维持类型安全。...",
+        "thinking": "### 问题关键点\n1. 核心诉求：索要知识库中泛型主题相关的原始文件原文输出\n2. 需求未明确泛型所属具体领域（最常见为编程领域的泛型特性，也存在其他领域用法）\n3. 用户默认AI可直接调取知识库存储的完整原始文件输出\n\n---\n\n### 思考步骤\n1. 确认能力边界：生成式AI不存储独立可完整导出的原始知识库文件，无法直接输出整份原文件原文\n2. 梳理需求歧义：泛型存在多领域应用场景，需要用户补充具体所属领域才能提供准确内容\n3. 给出替代方案：若用户需要泛型的权威核心内容，可整理对应领域的标准内容输出\n4. 引导用户补充信息，明确需求后提供对应服务",
+        "timestamp": "2026-03-16T18:22:40.932728"
+      },
+      {
+        "role": "user",
+        "content": "请问 AIOPS 项目的 意图识别的差错检验这块内容用了哪些手法和技术。",
+        "images": [],
+        "timestamp": "2026-03-30T18:23:01.871283"
+      },
+      {
+        "role": "assistant",
+        "content": "API调用失败: Connection error., request_id: 20260330182428uhcL26JrAGmwx2L7JbFt",
+        "thinking": "思考过程生成失败",
+        "timestamp": "2026-03-30T18:23:01.901835"
+      },
+      {
+        "role": "user",
+        "content": "请问AIOPS项目的意图识别和差错检验这块内容用了哪些技术和措施",
+        "images": [],
+        "timestamp": "2026-03-30T18:41:49.027710"
+      },
+      {
+        "role": "assistant",
+        "content": "API调用失败: Error code: 429 - {'error': {'code': 'SetLimitExceeded', 'message': 'Your account [2103766583] has reached the set inference limit for the [doubao-seed-2-0-lite] model, and the model service has been paused. To continue using this model, please visit the Model Activation page to adjust or close the \"Safe Experience Mode\". Request id: 02177486731526485c9a7acb047d6dabbfa02bbf3a2b67b2ffd19', 'param': '', 'type': 'TooManyRequests'}}, request_id: 20260330184156Mq1koNdjM2rsZxyvc4iE",
+        "thinking": "思考过程生成失败",
+        "timestamp": "2026-03-30T18:41:49.065707"
+      },
+      {
+        "role": "user",
+        "content": "请问AIOS项目的意图识别和差错检验这块内容用了哪些技术和措施",
+        "images": [],
+        "timestamp": "2026-03-30T18:46:58.542730"
+      },
+      {
+        "role": "assistant",
+        "content": "API调用失败: Error code: 429 - {'error': {'code': 'SetLimitExceeded', 'message': 'Your account [2103766583] has reached the set inference limit for the [doubao-seed-2-0-lite] model, and the model service has been paused. To continue using this model, please visit the Model Activation page to adjust or close the \"Safe Experience Mode\". Request id: 021774867625941bd223177cc7b14585a4ccdb5490e493846386b', 'param': '', 'type': 'TooManyRequests'}}, request_id: 20260330184707wTwDFvjHOzoQg39H8OR8",
+        "thinking": "思考过程生成失败",
+        "timestamp": "2026-03-30T18:46:58.606057"
+      }
+    ]
+  },
+  {
+    "id": "session_1771314982732",
+    "title": "你是啥",
+    "created_at": "2026-02-17T15:56:22.732362",
+    "messages": [
+      {
+        "role": "user",
+        "content": "你是啥",
+        "images": [],
+        "timestamp": "2026-02-17T19:27:56.406368"
+      },
+      {
+        "role": "assistant",
+        "content": "我是由字节跳动开发和训练的人工智能助手豆包呀～我可以帮你做很多事哦，比如解答各种知识疑问、陪你聊天谈心、帮你整理思路、写文案/计划/代码，或是出各种生活主意，有任何需求都可以告诉我😉",
+        "thinking": "### 问题关键点\n1. 属于基础身份问询类问题\n2. 用户需求是清晰获知我的定位属性，无额外衍生需求\n3. 问题表述简洁，回应需直白易懂不冗余\n\n---\n\n### 思考步骤\n1. 明确自身官方定位：我是字节跳动开发训练的人工智能助手\n2. 匹配问题的简洁属性，规划简洁的回应框架，不做冗余表述\n3. 梳理我可提供的核心服务方向，补充引导用户提出具体需求\n4. 调整表述适配日常交流语境，保证通俗易懂",
+        "timestamp": "2026-02-17T19:27:56.452197"
+      }
+    ]
+  },
+  {
+    "id": "session_1771253045058",
+    "title": "你是谁？？",
+    "created_at": "2026-02-16T22:44:05.058858",
+    "messages": [
+      {
+        "role": "user",
+        "content": "你是谁？？",
+        "images": [],
+        "timestamp": "2026-02-16T22:46:00.122905"
+      },
+      {
+        "role": "assistant",
+        "content": "我是AI助手，正在处理您的请求。我可以帮您解答各种问题，包括编程、写作、翻译、数学计算等。",
+        "thinking": "1. 用户询问我是什么模型\n2. 我需要介绍自己是一个AI助手\n3. 说明我可以提供的帮助范围\n4. 保持友好和专业的语气",
+        "timestamp": "2026-02-16T22:46:00.148648"
+      },
+      {
+        "role": "user",
+        "content": "你是什么模型？",
+        "images": [],
+        "timestamp": "2026-02-16T22:49:30.024401"
+      },
+      {
+        "role": "assistant",
+        "content": "我是AI助手，正在处理您的请求。我可以帮您解答各种问题，包括编程、写作、翻译、数学计算等。",
+        "thinking": "1. 用户询问我是什么模型\n2. 我需要介绍自己是一个AI助手\n3. 说明我可以提供的帮助范围\n4. 保持友好和专业的语气",
+        "timestamp": "2026-02-16T22:49:30.039822"
+      },
+      {
+        "role": "user",
+        "content": "你是谁？",
+        "images": [],
+        "timestamp": "2026-02-16T23:11:14.006394"
+      },
+      {
+        "role": "assistant",
+        "content": "API调用失败: Error code: 404 - {'error': {'code': 'InvalidEndpointOrModel.NotFound', 'message': 'The model or endpoint ep-20250216160541-r2t4c does not exist or you do not have access to it. Request id: 02177125467508420e33ae3714a969f29832d54235fd2cc153a47', 'param': '', 'type': 'Not Found'}}, request_id: 20260216231115C8756GuTAs8txucJr1Rn",
+        "thinking": "",
+        "timestamp": "2026-02-16T23:11:14.038828"
+      },
+      {
+        "role": "user",
+        "content": "你是谁？？？？？？",
+        "images": [],
+        "timestamp": "2026-02-16T23:11:23.541816"
+      },
+      {
+        "role": "assistant",
+        "content": "API调用失败: Error code: 404 - {'error': {'code': 'InvalidEndpointOrModel.NotFound', 'message': 'The model or endpoint ep-20250216160541-r2t4c does not exist or you do not have access to it. Request id: 02177125468428859df61006bd304ecb5213de71e9f0ab5482c33', 'param': '', 'type': 'Not Found'}}, request_id: 20260216231124LtwZFoG5hZChPduNe9GZ",
+        "thinking": "",
+        "timestamp": "2026-02-16T23:11:23.592689"
+      },
+      {
+        "role": "user",
+        "content": "你是什么模型",
+        "images": [],
+        "timestamp": "2026-02-17T01:27:22.503572"
+      },
+      {
+        "role": "user",
+        "content": "你是什么模型？",
+        "images": [],
+        "timestamp": "2026-02-17T01:30:37.996979"
+      },
+      {
+        "role": "user",
+        "content": "打个招呼",
+        "images": [],
+        "timestamp": "2026-02-17T01:33:09.028235"
+      },
+      {
+        "role": "user",
+        "content": "说话啊",
+        "images": [],
+        "timestamp": "2026-02-17T01:35:12.882509"
+      },
+      {
+        "role": "assistant",
+        "content": "嗨你好呀😊！我是字节跳动开发训练的人工智能豆包，很高兴能和你交流，不管你是想问问题、唠日常，还是需要帮忙写文案、整理资料、解决各种大大小小的需求，都可以随时告诉我哦~",
+        "thinking": "",
+        "timestamp": "2026-02-17T01:35:12.950676"
+      },
+      {
+        "role": "user",
+        "content": "你是什么模型？",
+        "images": [],
+        "timestamp": "2026-02-17T01:35:32.638192"
+      },
+      {
+        "role": "assistant",
+        "content": "我是由字节跳动独立开发训练的人工智能豆包，依托字节跳动自研的大语言模型为你提供服务，有任何问题或者需求都可以随时告诉我哦😊",
+        "thinking": "",
+        "timestamp": "2026-02-17T01:35:32.733957"
+      },
+      {
+        "role": "user",
+        "content": "不是你是什么版本的语言模型，豆包吗，豆包几呢？？",
+        "images": [],
+        "timestamp": "2026-02-17T01:36:10.781997"
+      },
+      {
+        "role": "assistant",
+        "content": "目前面向大众开放服务的豆包，没有对外公开明确的“第几代”这类编号命名，我是字节跳动持续迭代优化的最新版豆包大语言模型，开发团队一直在不断更新升级我的知识储备、推理能力、多场景处理能力等等，来给大家提供更好的服务体验~你有任何需求都可以随时告诉我哦。",
+        "thinking": "",
+        "timestamp": "2026-02-17T01:36:10.881957"
+      },
+      {
+        "role": "user",
+        "content": "你的思考、过后过程呢？",
+        "images": [],
+        "timestamp": "2026-02-17T01:50:16.187940"
+      },
+      {
+        "role": "user",
+        "content": "？思考过程呢？？、",
+        "images": [],
+        "timestamp": "2026-02-17T01:53:57.621541"
+      },
+      {
+        "role": "assistant",
+        "content": "我作为大语言模型，和人类有自主意识的主动思考不太一样：我是基于训练阶段学到的海量知识、语言逻辑和规律，结合你当前提问的上下文，生成匹配需求的回应内容。\n\n目前默认输出给你的是整理好的最终回答，如果是解数学题、逻辑推理题这类需要看到一步步推导过程的需求，你可以直接告诉我，我会把完整的思考步骤清晰列给你哒😊",
+        "thinking": "1. 分析用户问题...\n2. 检索相关知识库...\n3. 构建回答思路...\n4. 生成回复内容...\n",
+        "timestamp": "2026-02-17T01:53:57.712209"
+      },
+      {
+        "role": "user",
+        "content": "SaaS",
+        "images": [],
+        "timestamp": "2026-02-17T01:55:41.148842"
+      },
+      {
+        "role": "assistant",
+        "content": "SaaS是**Software-as-a-Service（软件即服务）**的缩写，是云计算三大核心服务模式之一（另外两个是IaaS基础设施即服务、PaaS平台即服务）。\n\n简单来说，它是一种「软件交付模式」：服务商把开发好的软件部署在自己的云服务器上，用户不需要本地下载安装、不需要自己搭建服务器维护，只要有网就能通过网页/轻客户端直接使用软件，一般按订阅（月/年付费）使用即可。\n\n### 核心特点：\n1. **轻成本低门槛**：不需要一次性支付高额的软件授权费、硬件采购费，按需求订阅付费即可；\n2. **零运维**：软件的更新升级、安全防护、服务器维护都由服务商负责，用户不需要配备专门的技术人员；\n3. **灵活可拓展**：需要加功能、加账号时直接升级套餐就能用，适配企业不同发展阶段的需求；\n4. **多端同步**：只要联网，手机、电脑、平板都能随时登录使用，数据实时同步。\n\n### 常见的SaaS产品：\n我们日常接触的很多工具都是SaaS模式，比如协同办公的飞书、钉钉，文档工具石墨文档/Notion，设计工具Figma，企业用的CRM客户管理系统、在线财务软件金蝶精斗云，垂直行业的餐饮收银SaaS、教培管理SaaS等等都属于SaaS。\n\n对比另外两种云计算模式简单区分：IaaS卖给你云服务器等基础设施，你自己搭软件；PaaS卖给你开发平台，你自己在上面做软件；SaaS直接给你做好能用的成品软件。",
+        "thinking": "1. 分析用户问题...\n2. 检索相关知识库...\n3. 构建回答思路...\n4. 生成回复内容...\n",
+        "timestamp": "2026-02-17T01:55:41.298927"
+      },
+      {
+        "role": "user",
+        "content": "你有被设定prompt 吗",
+        "images": [],
+        "timestamp": "2026-02-17T15:29:48.160715"
+      },
+      {
+        "role": "assistant",
+        "content": "有的，我作为对外提供服务的大语言模型，开发团队会给我设置**基础系统预设prompt（系统提示词）**，用来定义我的身份定位、回答规则、行为边界：比如要求我以友好专业的态度帮用户解决问题、遵守法律法规和公序良俗、拒绝生成违规有害内容等等，这是我运行时一直生效的基础设定。\n\n除此之外，你每次提问输入的内容，其实就是你给我的自定义prompt，我会结合基础预设+你的提问要求来生成对应的回应，开发团队也会根据产品需求和用户体验优化，不定期迭代调整这个基础预设prompt。",
+        "thinking": "是的，我有预设的基础系统prompt（前置指令设定），核心情况如下：\n1. 预设prompt的核心内容：主要明确了我的身份（字节跳动开发的AI助手豆包）、服务准则（合规友好回应、优先满足用户合理需求、遵守内容安全规范）、基础能力边界这些核心规则。\n2. 它的作用只是框定输出的基本方向，不会限制我针对你的具体提问生成灵活匹配的回应，不是固定的回答模板。\n3. 除了官方预设的基础prompt，你也可以根据自身需求给我自定义设定prompt（比如要求我扮演特定角色、按特定格式输出内容等），我会按照你的要求生成回应。",
+        "timestamp": "2026-02-17T15:29:48.320598"
+      }
+    ]
+  },
+  {
+    "id": "session_1771252982459",
+    "title": "你是什么模型",
+    "created_at": "2026-02-16T22:43:02.459087",
+    "messages": [
+      {
+        "role": "user",
+        "content": "你是什么模型",
+        "images": [],
+        "timestamp": "2026-02-16T22:43:58.953975"
+      },
+      {
+        "role": "assistant",
+        "content": "我是AI助手，正在处理您的请求...",
+        "timestamp": "2026-02-16T22:43:58.991067"
+      }
+    ]
+  }
+]

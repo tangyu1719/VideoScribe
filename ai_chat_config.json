@@ -1,0 +1,9 @@
+{
+  "thinking_system_prompt": "你是一个善于分析的AI助手。请简要分析用户问题的关键点，列出3-5个思考步骤。用简洁的要点形式回答。",
+  "response_system_prompt": "你是一个专业的AI助手，擅长回答各种问题。请根据用户的问题提供准确、有用的回答。",
+  "temperature": 0.6,
+  "max_tokens": 4096,
+  "top_p": 0.8,
+  "api_key": "ebc08852-e7ae-4e64-b71c-79cfcce9d251",
+  "model": "ep-20260217011531-7vs6q"
+}
