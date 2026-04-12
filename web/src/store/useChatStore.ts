@@ -153,7 +153,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             body: JSON.stringify({
               content,
               useDeepThinking: options.useDeepThinking,
-              useWebSearch: options.useWebSearch
+              useWebSearch: options.useWebSearch,
+              useKnowledgeBase: options.useKnowledgeBase
             })
           })
 
@@ -188,8 +189,25 @@ export const useChatStore = create<ChatState>()((set, get) => ({
                 try {
                   const parsed = JSON.parse(data)
                   
+                  // 处理知识库搜索状态
+                  if (parsed.type === 'kb_search' || parsed.type === 'kb_result' || 
+                      parsed.type === 'kb_reference' || parsed.type === 'kb_done' ||
+                      parsed.type === 'kb_empty' || parsed.type === 'kb_error' ||
+                      parsed.type === 'generating') {
+                    // 这些类型用于显示进度，可以存储在状态中
+                    set((state) => ({
+                      streamingMessage: {
+                        id: Date.now().toString(),
+                        role: 'assistant',
+                        content: parsed.content || '',
+                        timestamp: new Date().toISOString(),
+                        type: parsed.type
+                      }
+                    }))
+                  }
+                  
                   // 处理内容片段
-                  if (parsed.content) {
+                  if (parsed.type === 'content' && parsed.content) {
                     fullContent += parsed.content
                     set((state) => ({
                       streamingMessage: {
@@ -202,7 +220,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
                   }
                   
                   // 处理结束标记
-                  if (parsed.done) {
+                  if (parsed.type === 'done' || parsed.done) {
                     set((state) => ({
                       currentSession: state.currentSession
                         ? {

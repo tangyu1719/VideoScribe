@@ -15,7 +15,7 @@ import hashlib
 import numpy as np
 import logging
 from datetime import datetime
-from typing import List, Dict, Tuple, Optional, Any
+from typing import List, Dict, Tuple, Optional, Any, Set
 from pathlib import Path
 from dataclasses import dataclass
 
@@ -187,6 +187,103 @@ class RecursiveTextSplitter:
         return chunks
 
 
+def _hub_cache_roots() -> List[Path]:
+    """HF Hub 缓存根目录（hub 目录本身），去重且仅保留存在的路径。"""
+    roots: List[Path] = []
+    hub_cache = os.environ.get("HF_HUB_CACHE")
+    if hub_cache:
+        roots.append(Path(hub_cache).expanduser())
+    hf_home = os.environ.get("HF_HOME")
+    if hf_home:
+        roots.append(Path(hf_home).expanduser() / "hub")
+    roots.append(Path.home() / ".cache" / "huggingface" / "hub")
+    trans = os.environ.get("TRANSFORMERS_CACHE")
+    if trans:
+        t = Path(trans).expanduser()
+        roots.append(t)
+        roots.append(t / "hub")
+    # 与 kb_manager_fast 等一致：模型可能放在本模块目录下的 models/（含 models--Org--name 结构）
+    _agent_dir = Path(__file__).resolve().parent
+    for rel in ("models", Path("models") / "hub", Path(".cache") / "huggingface" / "hub"):
+        p = _agent_dir / rel
+        if p.is_dir():
+            roots.append(p)
+    seen: Set[Path] = set()
+    out: List[Path] = []
+    for r in roots:
+        try:
+            x = r.resolve()
+        except Exception:
+            x = r.expanduser()
+        if x in seen or not x.is_dir():
+            continue
+        seen.add(x)
+        out.append(x)
+    return out
+
+
+def _repo_cache_folder_name(model_id: str) -> str:
+    return "models--" + model_id.replace("/", "--").replace("\\", "--")
+
+
+def _newest_snapshot_under(snapshots_dir: Path) -> Optional[Path]:
+    """在 .../snapshots 下找含 config.json 的最新子目录。"""
+    if not snapshots_dir.is_dir():
+        return None
+    best: Optional[Path] = None
+    best_m = -1.0
+    for child in snapshots_dir.iterdir():
+        if not child.is_dir():
+            continue
+        if not (child / "config.json").is_file():
+            continue
+        try:
+            m = child.stat().st_mtime
+        except OSError:
+            continue
+        if m > best_m:
+            best_m = m
+            best = child
+    return best
+
+
+def _find_local_sentence_transformer_dir(model_id: str) -> Optional[Path]:
+    """
+    在 HuggingFace Hub 缓存中定位已下载模型的快照目录，避免走网络。
+    model_id 形如 BAAI/bge-large-zh-v1.5
+    """
+    folder = _repo_cache_folder_name(model_id)
+    for hub in _hub_cache_roots():
+        snap = _newest_snapshot_under(hub / folder / "snapshots")
+        if snap is not None:
+            return snap
+    return None
+
+
+def _explicit_bge_local_dir() -> Optional[Path]:
+    """
+    用户指定本地模型目录（含 config.json），或含 snapshots 子目录的 repo 缓存根。
+    环境变量：BGE_LOCAL_MODEL_PATH 或 ADVANCED_KB_BGE_MODEL_PATH
+    """
+    raw = os.environ.get("BGE_LOCAL_MODEL_PATH") or os.environ.get("ADVANCED_KB_BGE_MODEL_PATH")
+    if not raw:
+        return None
+    p = Path(raw).expanduser()
+    if not p.exists():
+        logger.warning(f"[BGE] 环境变量指定的模型路径不存在: {p}")
+        return None
+    if p.is_file():
+        p = p.parent
+    if (p / "config.json").is_file():
+        return p.resolve()
+    snap_root = p / "snapshots"
+    found = _newest_snapshot_under(snap_root)
+    if found is not None:
+        return found.resolve()
+    logger.warning(f"[BGE] 环境变量路径下未找到有效模型快照: {p}")
+    return None
+
+
 class BGEEmbeddingModel:
     """
     BGE-Large中文嵌入模型
@@ -200,36 +297,89 @@ class BGEEmbeddingModel:
         self._load_model()
     
     def _load_model(self):
-        """加载模型"""
+        """加载模型：优先本地 Hub 快照目录 + local_files_only，避免访问 HuggingFace。"""
         try:
+            # 在 import 前打开离线开关，避免 huggingface_hub 初始化后再连网
+            os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+            os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
+            os.environ.setdefault("HF_HUB_OFFLINE", "1")
+
             from sentence_transformers import SentenceTransformer
-            
-            # 设置离线模式
-            os.environ['TRANSFORMERS_OFFLINE'] = '1'
-            os.environ['HF_DATASETS_OFFLINE'] = '1'
-            os.environ['HF_HUB_OFFLINE'] = '1'
-            
-            # 尝试多个模型源
-            model_sources = [
-                self.model_name,
-                "shibing624/text2vec-base-chinese",  # 备选中文模型
-                "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",  # 备选多语言模型
-            ]
-            
-            for model_source in model_sources:
+
+            allow_download = os.environ.get("ADVANCED_KB_ALLOW_MODEL_DOWNLOAD", "").strip().lower() in (
+                "1",
+                "true",
+                "yes",
+            )
+
+            # 1) 用户显式目录
+            explicit = _explicit_bge_local_dir()
+            if explicit is not None:
                 try:
-                    logger.info(f"[BGE] 尝试加载模型: {model_source}")
-                    self.model = SentenceTransformer(model_source)
+                    logger.info(f"[BGE] 从本地目录加载（零网络）: {explicit}")
+                    self.model = SentenceTransformer(
+                        str(explicit),
+                        local_files_only=True,
+                        trust_remote_code=True,
+                    )
                     self.dimension = self.model.get_sentence_embedding_dimension()
-                    logger.info(f"[BGE] ✓ 模型加载成功: {model_source}, 维度: {self.dimension}")
+                    logger.info(f"[BGE] ✓ 模型加载成功, 维度: {self.dimension}")
                     return
                 except Exception as e:
-                    logger.warning(f"[BGE] 加载模型 {model_source} 失败: {e}")
+                    logger.warning(f"[BGE] 显式本地路径加载失败，尝试 Hub 缓存解析: {e}")
+
+            # 2) 按模型 id 在 HF 缓存中找快照（已下载的 BAAI/bge-large-zh-v1.5）
+            model_sources = [
+                self.model_name,
+                "shibing624/text2vec-base-chinese",
+                "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+            ]
+            for model_source in model_sources:
+                local_snap = _find_local_sentence_transformer_dir(model_source)
+                if local_snap is None:
+                    logger.info(f"[BGE] 未在本地 Hub 缓存找到: {model_source}")
                     continue
-            
-            logger.error("[BGE] 所有模型源都加载失败")
+                try:
+                    logger.info(f"[BGE] 从 Hub 缓存快照加载（local_files_only）: {local_snap}")
+                    self.model = SentenceTransformer(
+                        str(local_snap),
+                        local_files_only=True,
+                        trust_remote_code=True,
+                    )
+                    self.model_name = model_source
+                    self.dimension = self.model.get_sentence_embedding_dimension()
+                    logger.info(
+                        f"[BGE] ✓ 模型加载成功: {model_source}, 维度: {self.dimension}"
+                    )
+                    return
+                except Exception as e:
+                    logger.warning(f"[BGE] 本地快照加载失败 {local_snap}: {e}")
+                    continue
+
+            # 3) 仅当显式允许时才联网下载（默认禁止，防止启动卡死）
+            if allow_download:
+                for model_source in model_sources:
+                    try:
+                        logger.info(f"[BGE] 尝试联网加载（ADVANCED_KB_ALLOW_MODEL_DOWNLOAD 已开启）: {model_source}")
+                        self.model = SentenceTransformer(model_source, trust_remote_code=True)
+                        self.model_name = model_source
+                        self.dimension = self.model.get_sentence_embedding_dimension()
+                        logger.info(
+                            f"[BGE] ✓ 模型加载成功: {model_source}, 维度: {self.dimension}"
+                        )
+                        return
+                    except Exception as e:
+                        logger.warning(f"[BGE] 加载模型 {model_source} 失败: {e}")
+                        continue
+
+            logger.error(
+                "[BGE] 未找到本地 BGE 模型。请将模型放在 HF Hub 缓存 "
+                "(例如 ~/.cache/huggingface/hub/models--BAAI--bge-large-zh-v1.5/snapshots/<hash>/) "
+                "或设置环境变量 BGE_LOCAL_MODEL_PATH 指向含 config.json 的目录；"
+                "若必须联网下载可设置 ADVANCED_KB_ALLOW_MODEL_DOWNLOAD=1"
+            )
             self.model = None
-            
+
         except ImportError:
             logger.error("[BGE] sentence-transformers未安装")
             self.model = None

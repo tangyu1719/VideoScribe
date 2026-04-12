@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 import subprocess
 
+from ffmpeg_path import ensure_ffmpeg_path
+
 # 文件类型枚举
 class DocumentType(Enum):
     # 链接类型
@@ -510,6 +512,7 @@ class VideoParser(BaseParser):
     def _extract_audio(self, video_path: str) -> Optional[str]:
         """从视频中提取音频"""
         try:
+            ensure_ffmpeg_path()
             # 创建临时音频文件
             temp_dir = tempfile.gettempdir()
             audio_path = os.path.join(temp_dir, f"{hashlib.md5(video_path.encode()).hexdigest()}.mp3")

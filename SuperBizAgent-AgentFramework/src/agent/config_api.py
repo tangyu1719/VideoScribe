@@ -102,7 +102,7 @@ DEFAULT_LLM_CONFIG = {
     "name": "火山引擎",
     "apiKey": "",
     "baseUrl": "https://ark.cn-beijing.volces.com/api/v3",
-    "model": "ep-20260217011531-7vs6q",
+    "model": "ep-20260411182220-jv5qt",
     "requestFormat": "openai",
     "enabled": True,
     "createdAt": datetime.now().isoformat(),

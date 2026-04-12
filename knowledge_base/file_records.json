@@ -16,5 +16,14 @@
     "chunk_count": 101,
     "added_at": "2026-03-30 18:18:46",
     "vector_bound": false
+  },
+  {
+    "file_path": "C:/Users/PC/Desktop/后端简历.txt",
+    "file_name": "后端简历.txt",
+    "file_size": 8.302734375,
+    "file_type": ".txt",
+    "chunk_count": 10,
+    "added_at": "2026-04-08 20:30:05",
+    "vector_bound": false
   }
 ]

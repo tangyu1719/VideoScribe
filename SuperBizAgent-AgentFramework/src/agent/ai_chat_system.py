@@ -3,7 +3,7 @@
 """
 AI问答系统 - 基于RAG和火山引擎的Reasoning-Acting模式
 角色：资深Java和AI应用开发专家
-主模型：Doubao-Seed-2.0-Code
+主模型：Doubao-Seed-2.0-mini (ep-20260411182220-jv5qt)
 备用模型：Doubao-Seed-2.0-mini (ep-20260320202115-9jqfp)
 """
 
@@ -37,8 +37,8 @@ class AIChatSystem:
     """
     
     # 模型配置
-    PRIMARY_MODEL = "Doubao-Seed-2.0-Code"  # 主模型
-    FALLBACK_MODEL = "ep-20260320202115-9jqfp"  # 备用模型：Doubao-Seed-2.0-mini
+    PRIMARY_MODEL = "ep-20260411182220-jv5qt"  # 主接入点：Doubao-Seed-2.0-mini
+    FALLBACK_MODEL = "ep-20260320202115-9jqfp"  # 备用接入点：Doubao-Seed-2.0-mini
     
     def __init__(self, base_dir: str = None, use_fallback_model: bool = False):
         self.base_dir = base_dir or os.path.dirname(os.path.abspath(__file__))

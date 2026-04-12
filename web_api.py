@@ -778,6 +778,7 @@ class ChatMessageCreate(BaseModel):
     images: Optional[List[str]] = None
     useDeepThinking: Optional[bool] = False
     useWebSearch: Optional[bool] = False
+    useKnowledgeBase: Optional[bool] = False  # 是否使用知识库
 
 class RenameSessionRequest(BaseModel):
     title: str
@@ -1105,8 +1106,9 @@ async def send_message_stream(
     session_id: str, 
     request: ChatMessageCreate
 ):
-    """发送消息（流式）- 新版简化实现"""
+    """发送消息（流式）- 支持知识库问答"""
     print(f"\n[Stream API] 收到请求 - 会话：{session_id}")
+    print(f"[Stream API] 使用知识库: {request.useKnowledgeBase}")
     
     if session_id not in chat_sessions:
         raise HTTPException(status_code=404, detail="会话不存在")
@@ -1115,6 +1117,7 @@ async def send_message_stream(
     content = request.content
     useDeepThinking = request.useDeepThinking
     useWebSearch = request.useWebSearch
+    useKnowledgeBase = request.useKnowledgeBase
     
     # 添加用户消息
     user_message = {
@@ -1126,6 +1129,48 @@ async def send_message_stream(
     session["messages"].append(user_message)
     
     async def generate():
+        # 如果使用知识库，先进行知识库检索
+        kb_results = []
+        kb_context = ""
+        
+        if useKnowledgeBase:
+            print("[Stream API] 开始知识库检索...")
+            yield f"data: {json.dumps({'type': 'kb_search', 'content': '🔍 正在检索知识库...'}, ensure_ascii=False)}\n\n"
+            
+            try:
+                # 使用高级知识库
+                if KB_ADVANCED_AVAILABLE:
+                    kb = get_advanced_knowledge_base()
+                    if kb and kb.is_ready():
+                        kb_results = kb.search(content, top_k=5)
+                        print(f"[Stream API] 知识库检索完成，找到 {len(kb_results)} 条结果")
+                        
+                        if kb_results:
+                            yield f"data: {json.dumps({'type': 'kb_result', 'content': f'✅ 找到 {len(kb_results)} 个相关文档片段'}, ensure_ascii=False)}\n\n"
+                            
+                            # 构建知识库上下文
+                            context_parts = []
+                            for i, result in enumerate(kb_results, 1):
+                                source = result.get('source_file', '未知来源')
+                                doc_content = result.get('content', '')
+                                score = result.get('score', 0)
+                                context_parts.append(f"[文档{i}] 来源: {source} (相关度: {score:.2f})\n{doc_content}")
+                                
+                                # 发送检索结果摘要
+                                yield f"data: {json.dumps({'type': 'kb_reference', 'content': f'📄 {source} (相关度: {score:.2f})'}, ensure_ascii=False)}\n\n"
+                            
+                            kb_context = "\n\n".join(context_parts)
+                            yield f"data: {json.dumps({'type': 'kb_done', 'content': '---'}, ensure_ascii=False)}\n\n"
+                        else:
+                            yield f"data: {json.dumps({'type': 'kb_empty', 'content': '⚠️ 知识库中未找到相关内容，将基于通用知识回答'}, ensure_ascii=False)}\n\n"
+                    else:
+                        yield f"data: {json.dumps({'type': 'kb_error', 'content': '⚠️ 知识库未就绪'}, ensure_ascii=False)}\n\n"
+                else:
+                    yield f"data: {json.dumps({'type': 'kb_error', 'content': '⚠️ 知识库模块未加载'}, ensure_ascii=False)}\n\n"
+            except Exception as e:
+                print(f"[Stream API] 知识库检索失败: {e}")
+                yield f"data: {json.dumps({'type': 'kb_error', 'content': f'⚠️ 知识库检索失败: {str(e)}'}, ensure_ascii=False)}\n\n"
+        
         # 获取LLM配置
         if not llm_configs:
             yield f"data: {json.dumps({'error': '没有可用的LLM配置'}, ensure_ascii=False)}\n\n"
@@ -1156,12 +1201,41 @@ async def send_message_stream(
         if endpoint_id:
             model = endpoint_id
         
-        print(f"[Stream API] 调用URL: {api_url}")
+        print(f"[Stream API] 调用URL: {api_url}, 模型: {model}")
+        
+        # 构建系统提示词（包含知识库上下文）
+        system_prompt = """你是一位资深的Java和AI应用开发专家，拥有以下专业背景：
+
+【技术专长】
+1. Java生态：精通Spring Boot、Spring Cloud、JVM调优、高并发架构设计
+2. AI应用开发：熟悉LangChain、向量数据库、RAG系统、模型微调
+3. 高并发系统：精通分布式架构、缓存策略、消息队列、微服务
+4. 工程实践：代码重构、性能优化、系统设计、技术选型
+
+【回答风格】
+1. 技术深度：提供具体的技术细节和最佳实践
+2. 实用性：给出可落地的代码示例和架构建议
+3. 系统性：从架构层面分析问题，提供完整解决方案
+4. 前瞻性：结合最新技术趋势，提供演进建议
+
+【知识库引用规范】
+当使用知识库内容回答时，请：
+1. 明确标注引用来源（文档名称）
+2. 结合知识库内容和你的专业知识综合回答
+3. 如果知识库内容不足，补充你的专业见解
+
+请基于以上角色设定回答用户问题。"""
+        
+        # 构建用户提示词（包含知识库上下文）
+        user_content = content
+        if kb_context:
+            user_content = f"【知识库参考内容】\n{kb_context}\n\n【用户问题】\n{content}\n\n请基于以上知识库内容回答用户问题，如果知识库内容不足以完整回答，请补充你的专业知识。"
         
         # 构建消息列表
-        messages = []
-        for msg in session["messages"]:
-            messages.append({"role": msg["role"], "content": msg["content"]})
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content}
+        ]
         
         payload = {
             "model": model,
@@ -1178,9 +1252,12 @@ async def send_message_stream(
         
         full_content = ""
         
+        # 发送开始生成标记
+        yield f"data: {json.dumps({'type': 'generating', 'content': '🤖 生成回答...'}, ensure_ascii=False)}\n\n"
+        
         try:
             import httpx
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            async with httpx.AsyncClient(timeout=120.0) as client:
                 async with client.stream("POST", api_url, headers=headers, json=payload) as resp:
                     if resp.status_code != 200:
                         error_body = await resp.aread()
@@ -1209,7 +1286,7 @@ async def send_message_stream(
                             if content_chunk:
                                 full_content += content_chunk
                                 # 发送内容片段
-                                yield f"data: {json.dumps({'content': content_chunk}, ensure_ascii=False)}\n\n"
+                                yield f"data: {json.dumps({'type': 'content', 'content': content_chunk}, ensure_ascii=False)}\n\n"
                         
                         except json.JSONDecodeError:
                             continue
@@ -1228,6 +1305,14 @@ async def send_message_stream(
                 "thinking": None,
                 "useDeepThinking": useDeepThinking,
                 "useWebSearch": useWebSearch,
+                "useKnowledgeBase": useKnowledgeBase,
+                "knowledgeReferences": [
+                    {
+                        "content": r.get('content', '')[:200] + "...",
+                        "source": r.get('source_file', '未知'),
+                        "similarity": r.get('score', 0)
+                    } for r in kb_results[:3]
+                ] if kb_results else None,
                 "timestamp": datetime.now().isoformat()
             }
             session["messages"].append(assistant_message)
@@ -1235,7 +1320,7 @@ async def send_message_stream(
             print(f"[Stream API] 回复已保存，长度: {len(full_content)}")
         
         # 发送结束标记
-        yield f"data: {json.dumps({'done': True}, ensure_ascii=False)}\n\n"
+        yield f"data: {json.dumps({'type': 'done', 'done': True}, ensure_ascii=False)}\n\n"
     
     return StreamingResponse(
         generate(),

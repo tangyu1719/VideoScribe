@@ -149,6 +149,16 @@ def create_tables():
     ''')
     print('✓ 表 app_config 创建成功')
     
+    # 7b. video_gui 全量配置（与 config.json 双写）
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS video_agent_config (
+            id INT PRIMARY KEY DEFAULT 1,
+            config_json LONGTEXT NOT NULL,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ''')
+    print('✓ 表 video_agent_config 创建成功')
+    
     # 8. 视频下载任务表
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS video_tasks (

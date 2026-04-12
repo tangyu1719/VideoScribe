@@ -164,7 +164,8 @@ export default function AIChat() {
     await sendMessageStream(content, {
       images: pendingImages,
       useDeepThinking,
-      useWebSearch
+      useWebSearch,
+      useKnowledgeBase
     })
   }
 
@@ -589,10 +590,13 @@ export default function AIChat() {
                           </div>
                         )}
                         
-                        <div className={cn(
-                          "prose prose-sm max-w-none",
-                          message.role === 'user' && "prose-invert"
-                        )}>
+                        <div 
+                          className={cn(
+                            "prose prose-sm max-w-none select-text",
+                            message.role === 'user' && "prose-invert"
+                          )}
+                          style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
+                        >
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>
                             {message.content}
                           </ReactMarkdown>
@@ -632,7 +636,10 @@ export default function AIChat() {
                         <span className="text-sm">🤖</span>
                       </div>
                       <div className="max-w-[80%] rounded-lg p-3 bg-muted">
-                        <div className="prose prose-sm max-w-none">
+                        <div 
+                          className="prose prose-sm max-w-none select-text"
+                          style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
+                        >
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>
                             {streamingMessage.content}
                           </ReactMarkdown>

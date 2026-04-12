@@ -60,3 +60,7 @@ videos/
 # 临时文件
 tmp/
 temp/
+
+# 飞书发布落点配置（含 wiki/folder 标识，勿提交）
+src/agent/lark_publish_config.json
+lark_publish_config.json

@@ -143,10 +143,93 @@ def download_douyin_video(link: str, log_callback=None) -> Optional[str]:
         return None
 
 
+def get_video_duration(link: str, log_callback=None) -> Optional[float]:
+    """
+    获取视频时长（秒）- 使用yt-dlp获取视频信息
+    
+    Args:
+        link: 视频链接
+        log_callback: 日志回调函数
+    
+    Returns:
+        视频时长（秒），如果获取失败返回None
+    """
+    def log(msg, level="INFO"):
+        if log_callback:
+            log_callback(msg, level)
+        print(f"[VideoDuration] [{level}] {msg}")
+    
+    try:
+        log(f"正在获取视频时长信息...", "INFO")
+        
+        # 构建yt-dlp命令获取视频信息
+        cmd = [
+            "yt-dlp",
+            "--dump-json",
+            "--skip-download",
+            "--quiet",
+            link
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        
+        if result.returncode == 0 and result.stdout:
+            import json
+            video_info = json.loads(result.stdout.strip().split('\n')[0])
+            duration = video_info.get('duration')
+            
+            if duration:
+                log(f"视频时长: {duration:.1f}秒 ({duration/60:.1f}分钟)", "INFO")
+                return float(duration)
+            else:
+                log("无法获取视频时长信息", "WARNING")
+                return None
+        else:
+            log(f"获取视频信息失败: {result.stderr[:100]}", "WARNING")
+            return None
+            
+    except subprocess.TimeoutExpired:
+        log("获取视频信息超时", "WARNING")
+        return None
+    except Exception as e:
+        log(f"获取视频时长失败: {e}", "WARNING")
+        return None
+
+
+def calculate_timeout(duration: Optional[float], base_timeout: int = 300) -> int:
+    """
+    根据视频时长计算下载超时时间
+    
+    Args:
+        duration: 视频时长（秒）
+        base_timeout: 基础超时时间（秒）
+    
+    Returns:
+        计算后的超时时间（秒）
+    """
+    if duration is None:
+        # 无法获取时长，使用默认超时
+        return base_timeout
+    
+    # 根据视频时长计算超时时间
+    # 公式：基础超时 + 每分钟视频增加120秒下载时间
+    # 例如：10分钟视频 = 300 + 10*120 = 1500秒（25分钟）
+    calculated_timeout = int(base_timeout + (duration / 60) * 120)
+    
+    # 设置上限和下限
+    min_timeout = 300  # 最少5分钟
+    max_timeout = 3600  # 最多1小时
+    
+    final_timeout = max(min_timeout, min(calculated_timeout, max_timeout))
+    
+    return final_timeout
+
+
 def download_video(link: str, log_callback=None) -> Optional[str]:
     """
     下载视频 - 完整复制自video_gui.py download_video方法
     支持抖音专用解析器、yt-dlp下载、缓存机制
+    新增：根据视频长度动态调整超时时间
     """
     def log(msg, level="INFO"):
         if log_callback:
@@ -298,6 +381,14 @@ def download_video(link: str, log_callback=None) -> Optional[str]:
         else:
             cmd.append(link)
         
+        # 获取视频时长并计算超时时间
+        video_duration = get_video_duration(link, log_callback)
+        download_timeout = calculate_timeout(video_duration, base_timeout=300)
+        
+        log(f"视频下载超时设置: {download_timeout}秒 ({download_timeout/60:.1f}分钟)", "INFO")
+        if video_duration:
+            log(f"基于视频时长 {video_duration/60:.1f}分钟 计算得出", "INFO")
+        
         # 执行命令（增加超时时间，添加重试机制）
         max_retries = 2
         retry_count = 0
@@ -307,8 +398,8 @@ def download_video(link: str, log_callback=None) -> Optional[str]:
             try:
                 log(f"执行yt-dlp命令（尝试 {retry_count+1}/{max_retries}）...", "INFO")
                 log(f"yt-dlp命令: {' '.join(cmd[:12])}...", "DEBUG")  # 记录命令
-                # B站下载限速严重，增加超时时间到600秒（10分钟）
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+                # 使用动态计算的超时时间
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=download_timeout)
                 break
             except subprocess.TimeoutExpired as te:
                 retry_count += 1

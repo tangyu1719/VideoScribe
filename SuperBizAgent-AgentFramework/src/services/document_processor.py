@@ -16,6 +16,12 @@ from typing import Optional, Dict, Any, List, Union, BinaryIO
 from dataclasses import dataclass, field
 from enum import Enum
 import subprocess
+import sys
+
+_AGENT_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "agent"))
+if _AGENT_DIR not in sys.path:
+    sys.path.insert(0, _AGENT_DIR)
+from ffmpeg_path import ensure_ffmpeg_path
 
 # 文件类型枚举
 class DocumentType(Enum):
@@ -510,6 +516,7 @@ class VideoParser(BaseParser):
     def _extract_audio(self, video_path: str) -> Optional[str]:
         """从视频中提取音频"""
         try:
+            ensure_ffmpeg_path()
             # 创建临时音频文件
             temp_dir = tempfile.gettempdir()
             audio_path = os.path.join(temp_dir, f"{hashlib.md5(video_path.encode()).hexdigest()}.mp3")

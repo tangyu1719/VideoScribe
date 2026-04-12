@@ -24,6 +24,8 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+from ffmpeg_path import ensure_ffmpeg_path
+
 
 class ContentType(Enum):
     """内容类型"""
@@ -492,6 +494,7 @@ class MultimodalTool:
                 temp_audio = f.name
             
             # 使用ffmpeg提取音频
+            ensure_ffmpeg_path()
             subprocess.run([
                 'ffmpeg', '-i', file_path, '-vn', '-acodec', 'pcm_s16le', 
                 '-ar', '16000', '-ac', '1', temp_audio

@@ -13,9 +13,39 @@
 import warnings
 warnings.filterwarnings("ignore", message="A NumPy version >=1.23.5 and <2.3.0 is required for this version of SciPy")
 
+# ==================== 全局镜像配置 ====================
+# 所有下载优先使用镜像源
+MIRROR_CONFIG = {
+    "enabled": True,  # 是否启用镜像
+    "github_mirror": "https://ghproxy.com",  # GitHub镜像
+    "pypi_mirror": "https://pypi.tuna.tsinghua.edu.cn/simple",  # PyPI清华镜像
+    "npm_mirror": "https://registry.npmmirror.com",  # npm淘宝镜像
+}
+
+# ==================== 全局模型缓存配置 ====================
+# 统一模型缓存路径，确保多个项目共用同一套模型
+import os
+# Whisper模型缓存
+WHISPER_CACHE_DIR = os.path.expanduser("~/.cache/whisper")
+os.environ["WHISPER_CACHE_DIR"] = WHISPER_CACHE_DIR
+# HuggingFace模型缓存
+HF_HOME = os.path.expanduser("~/.cache/huggingface")
+os.environ["HF_HOME"] = HF_HOME
+# 避免 Transformers 后台线程访问 huggingface.co 时在国内网络下 ConnectTimeout(10060)；本地有缓存即可离线
+# 若需在线拉模型，启动前设置环境变量 HF_HUB_OFFLINE=0
+_hf_off = os.environ.get("HF_HUB_OFFLINE", "").strip().lower()
+if _hf_off not in ("0", "false", "no"):
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+    os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
+# Torch模型缓存
+TORCH_HOME = os.path.expanduser("~/.cache/torch")
+os.environ["TORCH_HOME"] = TORCH_HOME
+
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, filedialog
 import threading
+import queue
 import concurrent.futures
 import requests
 import json
@@ -66,6 +96,15 @@ except ImportError:
     RAG_AVAILABLE = False
     print("警告：RAG知识库模块未安装，知识库功能将不可用")
 
+# 运维Agent集成
+try:
+    from ops_agent import create_ops_agent, OpsAgent
+    OPS_AGENT_AVAILABLE = True
+    print("使用运维Agent模块")
+except ImportError as e:
+    OPS_AGENT_AVAILABLE = False
+    print(f"警告：运维Agent模块未安装: {e}")
+
 # AI问答系统集成
 try:
     from chat_gui import ChatGUI
@@ -99,11 +138,39 @@ except ImportError:
     print("警告：多模态文档处理模块未安装")
 
 APP_TITLE = "视频转文字处理工具 (GUI)"
+
+# 主窗口视觉主题：浅灰底、细线白卡片、低饱和强调色（Tkinter 可维护范围内尽量「轻」）
+UI_BG = "#f4f4f5"
+UI_CARD = "#ffffff"
+UI_BORDER = "#e4e4e7"
+UI_ACCENT = "#2563eb"
+UI_ACCENT_SOFT = "#eef2ff"
+UI_TEXT = "#18181b"
+UI_TEXT_MUTED = "#52525b"
+UI_TEXT_LIGHT = "#a1a1aa"
+UI_LOG_BG = "#fafafa"
+UI_FONT = ("Microsoft YaHei UI", 10)
+UI_FONT_BOLD = ("Microsoft YaHei UI", 10, "bold")
+UI_FONT_TITLE = ("Microsoft YaHei UI", 20, "bold")
+UI_FONT_NAV = ("Microsoft YaHei UI", 11, "bold")
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 VIDEO_DIR = os.path.join(BASE_DIR, "videos")
 OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
 HISTORY_FILE = os.path.join(BASE_DIR, "history.json")
+
+# 统一Whisper模型缓存路径 - 使用用户目录下的统一缓存
+WHISPER_CACHE_DIR = os.path.expanduser("~/.cache/whisper")
+os.environ["WHISPER_CACHE_DIR"] = WHISPER_CACHE_DIR
+
+# 设置 ffmpeg 路径（统一 demo_wendanghua/ffmpeg/bin）
+from ffmpeg_path import resolve_ffmpeg_bin_dir
+
+FFMPEG_DIR = resolve_ffmpeg_bin_dir()
+if FFMPEG_DIR:
+    os.environ["PATH"] = FFMPEG_DIR + os.pathsep + os.environ.get("PATH", "")
+    print(f"已添加本地 ffmpeg 路径: {FFMPEG_DIR}")
 
 # 火山引擎 API 配置（正确的API Key）
 VOLCENGINE_API_KEY = "ebc08852-e7ae-4e64-b71c-79cfcce9d251"
@@ -112,7 +179,8 @@ VOLCENGINE_API_URL = "https://ark.cn-beijing.volces.com/api/v3"
 # AI 对话专用 API 配置（正确的API Key）
 AI_CHAT_API_KEY = "ebc08852-e7ae-4e64-b71c-79cfcce9d251"
 AI_CHAT_API_URL = "https://ark.cn-beijing.volces.com/api/v3"
-AI_CHAT_MODEL = "ep-20260320202517-w6ncg"  # Doubao-Seed-1.6-flash 接入点 ID
+AI_CHAT_MODEL = "ep-20260411182220-jv5qt"  # Doubao-Seed-2.0-mini 主接入点
+AI_CHAT_MODEL_BACKUP = "ep-20260320202115-9jqfp"  # Doubao-Seed-2.0-mini 备用接入点
 
 # 百度 OCR API 配置（与链接分析保持一致）
 BAIDU_OCR_APP_ID = '122094788'
@@ -127,32 +195,70 @@ DEFAULT_CONFIG = {
     "rules": "1. 第一行必须是简洁的中文标题（不超过20字符，不要包含#号）\n2. 提取视频中的关键知识点和核心信息\n3. 保持客观中立的分析态度\n4. 结构化呈现分析结果\n5. 重点关注视频中的技术讲解和实用信息",
     "file_naming_rule": "总记录序号-月-日-文档名称（文档名称从AI生成的第一行标题中提取）",  # 文件名命名规则
     "output_template": "# {platform}视频分析\n\n## 视频信息\n- 分析时间: {datetime}\n- 原始链接: {link}\n- 平台: {platform}\n\n## 语音转文字内容\n{transcript}\n\n## AI分析摘要\n{summary}",
-    "user_prompt": ""
+    "user_prompt": "",
+    "ai_chat_model": "ep-20260411182220-jv5qt",
+    "ai_chat_model_backup": "ep-20260320202115-9jqfp",
+    # 飞书：同步开关持久化在 config.json；凭证与默认目录在「AI配置」中填写
+    "feishu_sync_enabled": False,
+    "feishu_app_id": "",
+    "feishu_app_secret": "",
+    "feishu_default_folder_path": "",
+    # 云空间文件夹 fldcn，或 …/drive/folder/fldcn… 完整 URL；纯中文路径需配合此项
+    "feishu_folder_token": "",
+    # 知识库：MD 先导入云文档再迁入 wiki（需 wiki:wiki 等权限，应用需加入知识库管理员）
+    "feishu_wiki_sync_enabled": False,
+    "feishu_wiki_space_name": "就业知识库",
+    "feishu_wiki_space_id": "",
+    "feishu_wiki_anchor_node_token": "",
+    "feishu_wiki_path_ensure": "就业技术文档集/AI相关",
 }
 
 for d in (VIDEO_DIR, OUTPUT_DIR):
     if not os.path.exists(d):
         os.makedirs(d)
 
-# 加载配置文件
+# 加载配置文件（与 DEFAULT_CONFIG 合并；若 MariaDB 有 video_agent_config 则覆盖同名键）
 def load_config():
+    base = dict(DEFAULT_CONFIG)
     if os.path.exists(CONFIG_FILE):
         try:
-            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                user = json.load(f)
+            if isinstance(user, dict):
+                base.update(user)
         except Exception as e:
             print(f"加载配置文件失败：{e}")
-    return DEFAULT_CONFIG
-
-# 保存配置文件
-def save_config(config):
     try:
-        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+        from video_config_mariadb import load_from_mariadb
+
+        db_cfg = load_from_mariadb()
+        if db_cfg:
+            base.update(db_cfg)
+            print("[配置] 已合并 MariaDB video_agent_config（库中字段覆盖 config.json）")
+    except Exception as e:
+        print(f"[配置] MariaDB 合并跳过：{e}")
+    return base
+
+# 保存配置文件（config.json + MariaDB 双写，与 ai_api_config_gui / db 模块一致）
+def save_config(config):
+    ok_file = False
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
-        return True
+        ok_file = True
     except Exception as e:
         print(f"保存配置文件失败：{e}")
-        return False
+    try:
+        from video_config_mariadb import is_available, save_to_mariadb
+
+        if is_available():
+            if save_to_mariadb(config):
+                print("[配置] 已同步至 MariaDB 表 video_agent_config")
+            else:
+                print("[配置] 警告：MariaDB 写入失败，已仅更新 config.json；请检查 db 模块与数据库")
+    except Exception as e:
+        print(f"[配置] MariaDB 同步异常（已仍尝试保留 config.json）：{e}")
+    return ok_file
 
 # 加载历史记录
 def load_history():
@@ -187,7 +293,8 @@ class DoubaoChatPage(tk.Frame):
         "max_tokens": 4096,
         "top_p": 0.9,
         "api_key": AI_CHAT_API_KEY,
-        "model": AI_CHAT_MODEL
+        "model": AI_CHAT_MODEL,
+        "model_backup": AI_CHAT_MODEL_BACKUP
     }
 
     def __init__(self, parent, rag_kb=None, rag_tool=None, **kwargs):
@@ -1161,37 +1268,43 @@ class DoubaoChatPage(tk.Frame):
             # 调用API（流式输出）- 使用chat.completions.create
             self._log_to_file("准备调用chat.completions.create...")
             
-            try:
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=input_messages,
-                    stream=True,
-                    temperature=self.ai_config.get("temperature", 0.7),
-                    max_tokens=self.ai_config.get("max_tokens", 4096),
-                    top_p=self.ai_config.get("top_p", 0.9)
-                )
-                self._log_to_file("API调用成功，开始接收流式响应")
+            backup_model = self.ai_config.get("model_backup", AI_CHAT_MODEL_BACKUP)
+            models_try = [model]
+            if backup_model and backup_model != model:
+                models_try.append(backup_model)
+            last_stream_err = None
+            for mi, use_model in enumerate(models_try):
+                try:
+                    label = "主" if mi == 0 else "备"
+                    self._log_to_file(f"流式API: {label}接入点 {use_model}")
+                    response = client.chat.completions.create(
+                        model=use_model,
+                        messages=input_messages,
+                        stream=True,
+                        temperature=self.ai_config.get("temperature", 0.7),
+                        max_tokens=self.ai_config.get("max_tokens", 4096),
+                        top_p=self.ai_config.get("top_p", 0.9)
+                    )
+                    self._log_to_file("API调用成功，开始接收流式响应")
 
-                chunk_count = 0
-                for chunk in response:
-                    chunk_count += 1
-                    
-                    # 解析chunk内容
-                    if chunk.choices and len(chunk.choices) > 0:
-                        delta = chunk.choices[0].delta
-                        
-                        # 检查是否有内容
-                        if hasattr(delta, 'content') and delta.content:
-                            content = delta.content
-                            self._log_to_file(f"收到内容 [{chunk_count}]: {content[:50]}...")
-                            yield {"type": "content", "content": content}
+                    chunk_count = 0
+                    for chunk in response:
+                        chunk_count += 1
+                        if chunk.choices and len(chunk.choices) > 0:
+                            delta = chunk.choices[0].delta
+                            if hasattr(delta, 'content') and delta.content:
+                                content = delta.content
+                                self._log_to_file(f"收到内容 [{chunk_count}]: {content[:50]}...")
+                                yield {"type": "content", "content": content}
 
-                self._log_to_file(f"流式响应结束，共收到 {chunk_count} 个chunk")
-            except Exception as api_error:
-                self._log_to_file(f"API调用异常: {api_error}")
-                import traceback
-                self._log_to_file(traceback.format_exc())
-                yield {"type": "error", "content": f"API调用失败: {str(api_error)}"}
+                    self._log_to_file(f"流式响应结束，共收到 {chunk_count} 个chunk")
+                    return
+                except Exception as api_error:
+                    last_stream_err = api_error
+                    self._log_to_file(f"API调用异常 ({use_model}): {api_error}")
+                    import traceback
+                    self._log_to_file(traceback.format_exc())
+            yield {"type": "error", "content": f"API调用失败: {str(last_stream_err)}"}
 
         except Exception as e:
             error_msg = f"API调用错误: {e}"
@@ -1966,7 +2079,7 @@ class App:
         self.root = root
         self.root.title(APP_TITLE)
         self.root.geometry("1200x800")
-        self.root.configure(bg="#f0f4f8")
+        self.root.configure(bg=UI_BG)
         # 允许窗口大小调整
         self.root.resizable(True, True)
 
@@ -1974,9 +2087,14 @@ class App:
         
         # 队列系统初始化
         self.task_queue = []
+        self._task_queue_lock = threading.Lock()
+        self._scheduler_start_lock = threading.Lock()
         self.processing_queue = False
         self.current_task_index = 0
         self.queue_max_size = 50  # 默认队列最大大小
+        
+        # 任务取消标志 - 用于停止正在执行的任务
+        self.task_cancel_flags = {}  # {link: cancel_event}
         
         # 历史记录初始化
         self.history = load_history()
@@ -1988,19 +2106,26 @@ class App:
         # 确保线程数量在合理范围内
         self.max_workers = max(1, min(self.max_workers, self.cpu_count))
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers)
-        self.active_futures = []  # 存储活跃的任务未来对象
-        
+        self.active_futures = {}  # 存储活跃的任务未来对象 {link: future}
+        self._pipeline_log_lock = threading.Lock()  # pipeline.log 线程安全
+        # 运维 Agent：日志/事件上报去重（避免 ERROR 刷屏重复出报告）
+        self._ops_incident_lock = threading.Lock()
+        self._ops_incident_last_ts = {}  # fingerprint -> monotonic time
+        self._ops_incident_cooldown = float(os.environ.get("OPS_INCIDENT_COOLDOWN_SEC", "120"))
+
         # 缓存机制初始化
-        self.model_cache = None  # Whisper模型缓存
+        self.model_cache = None  # Whisper 模型缓存（主实例）
         self.model_cache_lock = threading.Lock()  # 模型缓存锁
         self.video_cache = {}  # 视频缓存，键为链接，值为本地文件路径
         self.video_cache_lock = threading.Lock()  # 视频缓存锁
         self.file_operation_lock = threading.Lock()  # 文件操作锁，防止文件竞争
         self.file_counter_lock = threading.Lock()  # 文件计数器锁，确保文件名唯一
         
-        # 功能开关
-        self.feishu_enabled = False  # 飞书功能开关，默认禁用
-        
+        # Whisper：多实例池（每槽位独立 whisper.load_model，可真正并行 transcribe；单实例共享模型不安全）
+        self._whisper_pool_queue = None  # queue.Queue，元素为 (slot_id, model)
+        self._whisper_pool_init_lock = threading.Lock()
+        self._whisper_pool_model_name = os.environ.get("WHISPER_MODEL", "tiny").strip() or "tiny"
+
         # 【优化】程序启动时初始化RAG知识库（只初始化一次）
         # 优先使用新的RAG工具系统（包含意图识别和元数据管理）
         self._rag_kb = None
@@ -2047,7 +2172,20 @@ class App:
         # 先构建UI，确保所有UI组件都已创建
         self._build_ui()
         
-
+        # 运维Agent初始化（必须在UI构建之后，因为需要使用append_log）
+        if OPS_AGENT_AVAILABLE:
+            try:
+                # 使用备用API配置（Doubao-Seed-2.0-mini）
+                self.ops_agent = create_ops_agent(
+                    api_key=CONFIG.get("volcengine_api_key") or AI_CHAT_API_KEY,
+                    api_model=CONFIG.get("ai_chat_model") or AI_CHAT_MODEL,
+                )
+                self.append_log("运维Agent初始化完成")
+            except Exception as e:
+                self.append_log(f"运维Agent初始化失败: {e}")
+                self.ops_agent = None
+        else:
+            self.ops_agent = None
         
         # 自动恢复未完成任务
         self.recover_unfinished_tasks()
@@ -2066,124 +2204,118 @@ class App:
         
         # 自定义样式
         style.configure(
-            "TButton", 
-            padding=(12, 6),
-            font=("微软雅黑", 10),
-            foreground="#0066cc",
-            background="#e6f0ff"
+            "TButton",
+            padding=(10, 5),
+            font=UI_FONT,
+            foreground=UI_ACCENT,
+            background=UI_CARD,
+            borderwidth=0,
         )
-        style.configure(
-            "TLabel", 
-            font=("微软雅黑", 10),
-            foreground="#333"
+        style.map(
+            "TButton",
+            foreground=[("disabled", UI_TEXT_LIGHT), ("pressed", UI_ACCENT), ("active", UI_ACCENT)],
+            background=[("pressed", UI_ACCENT_SOFT), ("active", UI_ACCENT_SOFT)],
         )
-        style.configure(
-            "TEntry", 
-            padding=(8, 4),
-            font=("微软雅黑", 10)
-        )
-        style.configure(
-            "TLabelframe", 
-            font=("微软雅黑", 10, "bold"),
-            foreground="#0066cc"
-        )
+        style.configure("TLabel", font=UI_FONT, foreground=UI_TEXT)
+        style.configure("TEntry", padding=(8, 5), font=UI_FONT)
+        style.configure("TLabelframe", font=UI_FONT_BOLD, foreground=UI_TEXT)
         
         # 创建圆角输入框样式
         style.configure(
             "Rounded.TEntry",
             padding=(10, 6),
-            font=("微软雅黑", 10),
+            font=UI_FONT,
             borderwidth=0,
             relief="flat"
         )
         
         # 主容器
-        main_container = tk.Frame(self.root, bg="#f0f4f8")
-        main_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        main_container = tk.Frame(self.root, bg=UI_BG)
+        main_container.pack(fill=tk.BOTH, expand=True, padx=16, pady=16)
         
         # 顶部标题区域
-        title_frame = tk.Frame(main_container, bg="#f0f4f8")
-        title_frame.pack(fill=tk.X, pady=(0, 20))
+        title_frame = tk.Frame(main_container, bg=UI_BG)
+        title_frame.pack(fill=tk.X, pady=(0, 12))
         
         title_label = tk.Label(
-            title_frame, 
-            text="视频转文字处理工具", 
-            font=("微软雅黑", 18, "bold"),
-            foreground="#0066cc",
-            bg="#f0f4f8"
+            title_frame,
+            text="视频转文字处理工具",
+            font=UI_FONT_TITLE,
+            foreground=UI_TEXT,
+            bg=UI_BG,
         )
         title_label.pack(anchor=tk.W)
         
         subtitle_label = tk.Label(
-            title_frame, 
-            text="智能视频分析与文本转换系统", 
-            font=("微软雅黑", 10, "italic"),
-            foreground="#666",
-            bg="#f0f4f8"
+            title_frame,
+            text="智能视频分析与文本转换",
+            font=UI_FONT,
+            foreground=UI_TEXT_MUTED,
+            bg=UI_BG,
         )
-        subtitle_label.pack(anchor=tk.W, pady=(5, 0))
+        subtitle_label.pack(anchor=tk.W, pady=(4, 0))
         
-        # 导航栏区域
-        nav_frame = tk.Frame(main_container, bg="#ffffff", bd=1, relief=tk.RAISED)
-        nav_frame.pack(fill=tk.X, pady=(0, 20))
-        nav_frame.configure(highlightbackground="#0066cc", highlightthickness=1)
+        # 导航：与背景同色的扁平分段，选中项用浅色底 + 强调色文字
+        nav_frame = tk.Frame(main_container, bg=UI_BG, bd=0, highlightthickness=0)
+        nav_frame.pack(fill=tk.X, pady=(0, 12))
         
-        # 导航按钮容器
-        nav_container = tk.Frame(nav_frame, bg="#ffffff")
-        nav_container.pack(fill=tk.X, padx=10, pady=8)
+        nav_container = tk.Frame(nav_frame, bg=UI_BG)
+        nav_container.pack(fill=tk.X, padx=0, pady=4)
         
-        # 导航按钮样式
         nav_btn_style = {
-            "font": ("微软雅黑", 11, "bold"),
-            "padx": 20,
-            "pady": 8,
+            "font": UI_FONT_NAV,
+            "padx": 18,
+            "pady": 6,
             "bd": 0,
-            "cursor": "hand2"
+            "relief": tk.FLAT,
+            "cursor": "hand2",
+            "activebackground": UI_ACCENT_SOFT,
+            "activeforeground": UI_ACCENT,
         }
         
         # 视频处理页面按钮（默认选中）
         self.nav_video_btn = tk.Button(
             nav_container,
-            text="📹 视频处理",
+            text="视频处理",
             command=self._show_video_page,
-            bg="#0066cc",
-            fg="#ffffff",
-            **nav_btn_style
+            bg=UI_CARD,
+            fg=UI_ACCENT,
+            **nav_btn_style,
         )
-        self.nav_video_btn.pack(side=tk.LEFT, padx=5)
+        self.nav_video_btn.pack(side=tk.LEFT, padx=(0, 6))
         
         # AI问答页面按钮
         self.nav_chat_btn = tk.Button(
             nav_container,
-            text="🤖 AI问答",
+            text="AI 问答",
             command=self._show_chat_page,
-            bg="#f0f4f8",
-            fg="#333333",
-            **nav_btn_style
+            bg=UI_BG,
+            fg=UI_TEXT_MUTED,
+            **nav_btn_style,
         )
-        self.nav_chat_btn.pack(side=tk.LEFT, padx=5)
+        self.nav_chat_btn.pack(side=tk.LEFT, padx=(0, 6))
         
         # 多模态文档处理页面按钮
         self.nav_multimodal_btn = tk.Button(
             nav_container,
-            text="📁 文档处理",
+            text="文档处理",
             command=self._show_multimodal_page,
-            bg="#f0f4f8",
-            fg="#333333",
-            **nav_btn_style
+            bg=UI_BG,
+            fg=UI_TEXT_MUTED,
+            **nav_btn_style,
         )
-        self.nav_multimodal_btn.pack(side=tk.LEFT, padx=5)
+        self.nav_multimodal_btn.pack(side=tk.LEFT, padx=(0, 6))
         
         # 页面内容容器
-        self.content_frame = tk.Frame(main_container, bg="#f0f4f8")
+        self.content_frame = tk.Frame(main_container, bg=UI_BG)
         self.content_frame.pack(fill=tk.BOTH, expand=True)
         
         # 创建视频处理页面
-        self.video_page = tk.Frame(self.content_frame, bg="#f0f4f8")
+        self.video_page = tk.Frame(self.content_frame, bg=UI_BG)
         self.video_page.pack(fill=tk.BOTH, expand=True)
         
         # 创建AI问答页面（初始隐藏）
-        self.chat_page = tk.Frame(self.content_frame, bg="#f0f4f8")
+        self.chat_page = tk.Frame(self.content_frame, bg=UI_BG)
         
         # 创建多模态文档处理页面（初始隐藏）
         self.multimodal_page = None
@@ -2197,41 +2329,130 @@ class App:
     def _build_video_page(self, parent):
         """构建视频处理页面"""
         # 核心功能区域
-        core_frame = tk.Frame(parent, bg="#f0f4f8")
-        core_frame.pack(fill=tk.X, pady=(0, 20))
+        core_frame = tk.Frame(parent, bg=UI_BG)
+        core_frame.pack(fill=tk.X, pady=(0, 12))
         
         # 视频链接输入区域
-        link_frame = tk.Frame(core_frame, bg="#ffffff", bd=0, relief=tk.RAISED)
-        link_frame.pack(fill=tk.X, padx=5, pady=5)
-        link_frame.configure(bg="#ffffff", highlightbackground="#0066cc", highlightthickness=1, borderwidth=0, highlightcolor="#0066cc")
+        link_frame = tk.Frame(core_frame, bg=UI_CARD, bd=0, relief=tk.FLAT)
+        link_frame.pack(fill=tk.X, padx=0, pady=(0, 8))
+        link_frame.configure(
+            bg=UI_CARD,
+            highlightbackground=UI_BORDER,
+            highlightthickness=1,
+            borderwidth=0,
+            highlightcolor=UI_BORDER,
+        )
         
         link_label = tk.Label(
-            link_frame, 
-            text="视频链接：", 
-            font=("微软雅黑", 10),
-            foreground="#333",
-            bg="#ffffff"
+            link_frame,
+            text="视频链接",
+            font=UI_FONT_BOLD,
+            foreground=UI_TEXT,
+            bg=UI_CARD,
         )
-        link_label.pack(side=tk.LEFT, padx=(15, 10), pady=15)
+        link_label.pack(side=tk.LEFT, padx=(14, 10), pady=14)
         
         self.link_entry = tk.Entry(
-            link_frame, 
-            textvariable=self.link_var, 
-            font=("微软雅黑", 10),
-            bd=0, bg="#ffffff",
+            link_frame,
+            textvariable=self.link_var,
+            font=UI_FONT,
+            bd=0,
+            bg=UI_CARD,
+            fg=UI_TEXT,
             relief=tk.FLAT,
-            highlightthickness=0
+            highlightthickness=0,
         )
         self.link_entry.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True, pady=15)
         
+        # 飞书同步（链接分析流程：生成 MD 后上传；勾选状态写入 config.json）
+        feishu_quick_frame = tk.Frame(core_frame, bg=UI_CARD, bd=0, relief=tk.FLAT)
+        feishu_quick_frame.pack(fill=tk.X, padx=0, pady=(0, 8))
+        feishu_quick_frame.configure(
+            bg=UI_CARD,
+            highlightbackground=UI_BORDER,
+            highlightthickness=1,
+            borderwidth=0,
+            highlightcolor=UI_BORDER,
+        )
+        inner_f = tk.Frame(feishu_quick_frame, bg=UI_CARD)
+        inner_f.pack(fill=tk.X, padx=12, pady=10)
+
+        self.feishu_sync_var = tk.BooleanVar(value=bool(CONFIG.get("feishu_sync_enabled", False)))
+
+        def _persist_feishu_sync_toggle():
+            global CONFIG
+            CONFIG = {**CONFIG, "feishu_sync_enabled": bool(self.feishu_sync_var.get())}
+            save_config(CONFIG)
+
+        feishu_chk = tk.Checkbutton(
+            inner_f,
+            text="同步到飞书（生成 MD 后上传至知识库路径）",
+            variable=self.feishu_sync_var,
+            command=_persist_feishu_sync_toggle,
+            font=UI_FONT,
+            bg=UI_CARD,
+            fg=UI_TEXT,
+            activebackground=UI_CARD,
+            highlightthickness=0,
+            selectcolor=UI_CARD,
+        )
+        feishu_chk.pack(anchor=tk.W)
+
+        self.task_feishu_folder_var = tk.StringVar(
+            value=(CONFIG.get("feishu_default_folder_path") or "").strip()
+        )
+        row2 = tk.Frame(inner_f, bg=UI_CARD)
+        row2.pack(fill=tk.X, pady=(6, 0))
+        tk.Label(
+            row2,
+            text="本任务飞书路径（可选，覆盖默认）：",
+            font=("Microsoft YaHei UI", 9),
+            fg=UI_TEXT_MUTED,
+            bg=UI_CARD,
+        ).pack(side=tk.LEFT)
+        self.task_feishu_folder_entry = tk.Entry(
+            row2,
+            textvariable=self.task_feishu_folder_var,
+            font=("Microsoft YaHei UI", 9),
+            bd=1,
+            relief=tk.FLAT,
+            highlightthickness=1,
+            highlightbackground=UI_BORDER,
+            bg=UI_LOG_BG,
+            fg=UI_TEXT,
+        )
+        self.task_feishu_folder_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 0))
+        tk.Label(
+            inner_f,
+            text="留空则使用「AI配置」中的默认飞书文件夹路径；统一凭证与默认路径在「AI配置」中设置。",
+            font=("Microsoft YaHei UI", 8),
+            fg=UI_TEXT_LIGHT,
+            bg=UI_CARD,
+        ).pack(anchor=tk.W, pady=(4, 0))
+
         # 按钮区域
-        button_frame = tk.Frame(core_frame, bg="#f0f4f8")
-        button_frame.pack(fill=tk.X, padx=5, pady=10)
+        button_frame = tk.Frame(core_frame, bg=UI_BG)
+        button_frame.pack(fill=tk.X, padx=0, pady=8)
         
-        btn_container = tk.Frame(button_frame, bg="#f0f4f8")
+        btn_container = tk.Frame(button_frame, bg=UI_BG)
         btn_container.pack(anchor=tk.E)
         
-        self.start_btn = ttk.Button(btn_container, text="开始处理", command=self.start)
+        # 开始处理按钮 - 使用tk.Button并设置蓝色样式
+        self.start_btn = tk.Button(
+            btn_container,
+            text="开始处理",
+            command=self.start,
+            bg=UI_ACCENT,
+            fg="#ffffff",
+            font=UI_FONT_BOLD,
+            relief=tk.FLAT,
+            cursor="hand2",
+            padx=22,
+            pady=6,
+            activebackground="#1d4ed8",
+            activeforeground="#ffffff",
+            bd=0,
+        )
         self.start_btn.pack(side=tk.LEFT, padx=10)
         
         self.ai_config_btn = ttk.Button(btn_container, text="AI配置", command=self.open_ai_config_window)
@@ -2254,43 +2475,55 @@ class App:
         self.thread_config_btn.pack(side=tk.LEFT, padx=10)
         
         # 任务状态区域
-        self.status_frame = tk.Frame(parent, bg="#ffffff", bd=0, relief=tk.RAISED)
-        self.status_frame.pack(fill=tk.X, pady=(0, 20))
-        self.status_frame.configure(bg="#ffffff", highlightbackground="#0066cc", highlightthickness=1, borderwidth=0, highlightcolor="#0066cc")
+        self.status_frame = tk.Frame(parent, bg=UI_CARD, bd=0, relief=tk.FLAT)
+        self.status_frame.pack(fill=tk.X, pady=(0, 12))
+        self.status_frame.configure(
+            bg=UI_CARD,
+            highlightbackground=UI_BORDER,
+            highlightthickness=1,
+            borderwidth=0,
+            highlightcolor=UI_BORDER,
+        )
         
         self.status_info = tk.Label(
-            self.status_frame, 
-            text="任务状态：就绪", 
-            font=("微软雅黑", 10),
-            foreground="#333",
-            bg="#ffffff"
+            self.status_frame,
+            text="任务状态：就绪",
+            font=UI_FONT,
+            foreground=UI_TEXT,
+            bg=UI_CARD,
         )
-        self.status_info.pack(side=tk.LEFT, padx=(15, 10), pady=10)
+        self.status_info.pack(side=tk.LEFT, padx=(14, 10), pady=10)
         
         # 队列状态显示
         self.queue_status = tk.Label(
-            self.status_frame, 
-            text="队列：0 个任务", 
-            font=("微软雅黑", 10),
-            foreground="#0066cc",
-            bg="#ffffff"
+            self.status_frame,
+            text="队列：0 个任务",
+            font=UI_FONT,
+            foreground=UI_ACCENT,
+            bg=UI_CARD,
         )
         self.queue_status.pack(side=tk.RIGHT, padx=(10, 15), pady=10)
         
         # User Prompt 输入区域
-        user_prompt_frame = tk.Frame(parent, bg="#ffffff", bd=0, relief=tk.RAISED)
-        user_prompt_frame.pack(fill=tk.X, pady=(0, 20))
-        user_prompt_frame.configure(bg="#ffffff", highlightbackground="#0066cc", highlightthickness=1, borderwidth=0, highlightcolor="#0066cc")
+        user_prompt_frame = tk.Frame(parent, bg=UI_CARD, bd=0, relief=tk.FLAT)
+        user_prompt_frame.pack(fill=tk.X, pady=(0, 12))
+        user_prompt_frame.configure(
+            bg=UI_CARD,
+            highlightbackground=UI_BORDER,
+            highlightthickness=1,
+            borderwidth=0,
+            highlightcolor=UI_BORDER,
+        )
         
-        prompt_label_frame = tk.Frame(user_prompt_frame, bg="#ffffff")
-        prompt_label_frame.pack(fill=tk.X, padx=15, pady=(15, 0))
+        prompt_label_frame = tk.Frame(user_prompt_frame, bg=UI_CARD)
+        prompt_label_frame.pack(fill=tk.X, padx=15, pady=(14, 0))
         
         prompt_label = tk.Label(
-            prompt_label_frame, 
-            text="User Prompt（可选）：", 
-            font=("微软雅黑", 10, "bold"),
-            foreground="#0066cc",
-            bg="#ffffff"
+            prompt_label_frame,
+            text="User Prompt（可选）",
+            font=UI_FONT_BOLD,
+            foreground=UI_TEXT,
+            bg=UI_CARD,
         )
         prompt_label.pack(side=tk.LEFT)
         
@@ -2383,33 +2616,35 @@ class App:
         expand_btn.pack(side=tk.RIGHT, padx=10)
         
         prompt_desc = tk.Label(
-            prompt_label_frame, 
-            text="每次处理视频时的额外提示信息，最多500字符", 
-            font=("微软雅黑", 9),
-            foreground="#666",
-            bg="#ffffff"
+            prompt_label_frame,
+            text="每次处理视频时的额外提示信息，最多500字符",
+            font=("Microsoft YaHei UI", 9),
+            foreground=UI_TEXT_MUTED,
+            bg=UI_CARD,
         )
         prompt_desc.pack(side=tk.LEFT, padx=10)
         
         # 字符计数标签
         char_count_var = tk.StringVar(value="0/500")
         char_count_label = tk.Label(
-            prompt_label_frame, 
-            textvariable=char_count_var, 
-            font=("微软雅黑", 9),
-            foreground="#999",
-            bg="#ffffff"
+            prompt_label_frame,
+            textvariable=char_count_var,
+            font=("Microsoft YaHei UI", 9),
+            foreground=UI_TEXT_LIGHT,
+            bg=UI_CARD,
         )
         char_count_label.pack(side=tk.RIGHT)
         
         self.user_prompt_var = tk.StringVar(value=CONFIG.get("user_prompt", DEFAULT_CONFIG["user_prompt"]))
         self.user_prompt_entry = tk.Entry(
-            user_prompt_frame, 
-            textvariable=self.user_prompt_var, 
-            font=("微软雅黑", 10),
-            bd=0, bg="#ffffff",
+            user_prompt_frame,
+            textvariable=self.user_prompt_var,
+            font=UI_FONT,
+            bd=0,
+            bg=UI_LOG_BG,
+            fg=UI_TEXT,
             relief=tk.FLAT,
-            highlightthickness=0
+            highlightthickness=0,
         )
         self.user_prompt_entry.pack(fill=tk.X, padx=15, pady=(10, 15))
         
@@ -2431,44 +2666,52 @@ class App:
         limit_characters()
         
         # 日志区域
-        log_frame = tk.Frame(parent, bg="#ffffff", bd=0, relief=tk.RAISED)
-        log_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 20))
-        log_frame.configure(bg="#ffffff", highlightbackground="#0066cc", highlightthickness=1, borderwidth=0, highlightcolor="#0066cc")
+        log_frame = tk.Frame(parent, bg=UI_CARD, bd=0, relief=tk.FLAT)
+        log_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 12))
+        log_frame.configure(
+            bg=UI_CARD,
+            highlightbackground=UI_BORDER,
+            highlightthickness=1,
+            borderwidth=0,
+            highlightcolor=UI_BORDER,
+        )
         
-        log_title_frame = tk.Frame(log_frame, bg="#ffffff")
-        log_title_frame.pack(fill=tk.X, padx=15, pady=(15, 10))
+        log_title_frame = tk.Frame(log_frame, bg=UI_CARD)
+        log_title_frame.pack(fill=tk.X, padx=15, pady=(14, 8))
         
         log_title = tk.Label(
-            log_title_frame, 
-            text="处理日志", 
-            font=("微软雅黑", 10, "bold"),
-            foreground="#0066cc",
-            bg="#ffffff"
+            log_title_frame,
+            text="处理日志",
+            font=UI_FONT_BOLD,
+            foreground=UI_TEXT,
+            bg=UI_CARD,
         )
         log_title.pack(anchor=tk.W)
         
         self.log = scrolledtext.ScrolledText(
-            log_frame, 
-            height=15, 
+            log_frame,
+            height=15,
             font=("Consolas", 10),
-            bd=0, 
-            bg="#f9f9f9",
+            bd=0,
+            bg=UI_LOG_BG,
+            fg=UI_TEXT,
             relief=tk.FLAT,
-            wrap=tk.WORD
+            wrap=tk.WORD,
+            highlightthickness=0,
         )
         self.log.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 15))
         
         # 底部状态区域
-        status_frame = tk.Frame(parent, bg="#f0f4f8")
-        status_frame.pack(fill=tk.X, pady=(0, 10))
+        status_frame = tk.Frame(parent, bg=UI_BG)
+        status_frame.pack(fill=tk.X, pady=(0, 8))
         
         self.status_var = tk.StringVar(value="就绪")
         status_label = tk.Label(
-            status_frame, 
-            textvariable=self.status_var, 
-            font=("微软雅黑", 10),
-            foreground="#0066cc",
-            bg="#f0f4f8"
+            status_frame,
+            textvariable=self.status_var,
+            font=UI_FONT,
+            foreground=UI_TEXT_MUTED,
+            bg=UI_BG,
         )
         status_label.pack(anchor=tk.W)
         
@@ -2482,13 +2725,141 @@ class App:
         )
         status_indicator.pack(side=tk.LEFT, padx=(0, 10))
 
-    # 日志与状态
+    # 日志与状态（非主线程通过 after 投递，避免 Tk 死锁导致队列卡死在「处理中」）
     def append_log(self, msg, *args):
         ts = datetime.now().strftime("%H:%M:%S")
         thread_id = threading.current_thread().name
-        self.log.insert(tk.END, f"[{ts}] [线程:{thread_id}] {msg}\n")
-        self.log.see(tk.END)
-        self.root.update_idletasks()
+        level = "INFO"
+        if args and isinstance(args[-1], str):
+            u = args[-1].upper()
+            if u in ("ERROR", "EXCEPTION", "WARNING", "INFO", "DEBUG"):
+                level = u
+        line = f"[{ts}] [线程:{thread_id}] {msg}\n"
+
+        def _do():
+            self.log.insert(tk.END, line)
+            self.log.see(tk.END)
+            self.root.update_idletasks()
+
+        if threading.current_thread() is threading.main_thread():
+            _do()
+        else:
+            try:
+                self.root.after(0, _do)
+            except Exception:
+                _do()
+
+        if self._ops_should_forward_log_to_agent(msg, level):
+            threading.Thread(
+                target=self._ops_dispatch_log_incident,
+                args=(msg, level),
+                daemon=True,
+            ).start()
+
+    def _ops_should_forward_log_to_agent(self, msg: str, level: str) -> bool:
+        """仅 ERROR / EXCEPTION 上报运维 Agent；WARNING 不自动上报。"""
+        if not getattr(self, "ops_agent", None):
+            return False
+        if "[运维Agent]" in msg or "运维事件已记录" in msg:
+            return False
+        if os.environ.get("OPS_LOG_INCIDENT_DISABLE", "").strip() in ("1", "true", "yes"):
+            return False
+        return level in ("ERROR", "EXCEPTION")
+
+    def _ops_incident_fingerprint(self, category: str, text: str) -> str:
+        import hashlib
+
+        h = hashlib.md5(f"{category}|{text[:500]}".encode("utf-8", errors="ignore")).hexdigest()
+        return h
+
+    def _ops_incident_allow(self, fp: str) -> bool:
+        import time as _t
+
+        now = _t.monotonic()
+        with self._ops_incident_lock:
+            last = self._ops_incident_last_ts.get(fp, 0.0)
+            if now - last < self._ops_incident_cooldown:
+                return False
+            self._ops_incident_last_ts[fp] = now
+        return True
+
+    def _ops_collect_ui_logs(self, max_lines: int = 200) -> list:
+        out: list = []
+        ev = threading.Event()
+
+        def _grab():
+            try:
+                w = getattr(self, "log", None)
+                if w is not None:
+                    raw = w.get("1.0", tk.END)
+                    lines = raw.split("\n")
+                    out.append(lines[-max_lines:] if len(lines) > max_lines else lines)
+                else:
+                    out.append([])
+            finally:
+                ev.set()
+
+        try:
+            if threading.current_thread() is threading.main_thread():
+                _grab()
+            else:
+                self.root.after(0, _grab)
+                ev.wait(timeout=3.0)
+        except Exception:
+            out.append([])
+        return out[0] if out else []
+
+    def _ops_dispatch_log_incident(self, msg: str, level: str) -> None:
+        fp = self._ops_incident_fingerprint("log_" + level, msg)
+        if not self._ops_incident_allow(fp):
+            return
+        if not self.ops_agent:
+            return
+        try:
+            logs = self._ops_collect_ui_logs()
+            err = {"type": f"Log{level}", "message": msg[:4000], "traceback": ""}
+            tid = f"log_{fp[:10]}"
+            md = self.ops_agent.monitor_task_completion(
+                link="_gui_log_",
+                task_id=tid,
+                status="failed",
+                logs=logs,
+                error_info=err,
+            )
+            if md:
+                self.append_log(f"[运维Agent] 已根据日志{level}生成维护建议: {md}", "INFO")
+        except Exception as e:
+            self.append_log(f"[运维Agent] 日志事件上报失败: {e}", "INFO")
+
+    def _schedule_ops_volcengine_degraded(self, primary_err: str, primary_ep: str, backup_ep: str) -> None:
+        msg = (
+            f"火山主接入点失败但备用成功。主: {primary_ep} 错误: {primary_err[:800]}；"
+            f"已用备: {backup_ep}。建议：检查控制台 Safe Experience/限额，或把 config.json 中 "
+            f"ai_chat_model 与 ai_chat_model_backup 对调。"
+        )
+        fp = self._ops_incident_fingerprint("volcengine_degraded", primary_err + primary_ep)
+        if not self._ops_incident_allow(fp):
+            return
+        if not self.ops_agent:
+            return
+        try:
+            logs = self._ops_collect_ui_logs()
+            err = {
+                "type": "VolcenginePrimaryFailedBackupOk",
+                "message": msg,
+                "traceback": "",
+            }
+            md = self.ops_agent.monitor_task_completion(
+                link="_volcengine_",
+                task_id=f"ve_{fp[:10]}",
+                status="failed",
+                logs=logs,
+                error_info=err,
+            )
+            if md:
+                self.append_log(f"[运维Agent] 主备切换事件已记录: {md}", "INFO")
+        except Exception as e:
+            self.append_log(f"[运维Agent] 主备事件上报失败: {e}", "INFO")
 
     def set_status(self, msg: str):
         self.status_var.set(msg)
@@ -2503,10 +2874,62 @@ class App:
     
     def update_queue_status(self):
         """更新队列状态显示"""
-        queue_length = len(self.task_queue)
-        processing_status = "处理中" if self.processing_queue else "就绪"
-        self.queue_status.config(text=f"队列：{queue_length} 个任务 | 状态：{processing_status}")
-        self.root.update_idletasks()
+        def _do():
+            pending = self._task_queue_len()
+            running = len(self.active_futures)
+            processing_status = "处理中" if self.processing_queue else "就绪"
+            self.queue_status.config(
+                text=f"队列：{pending} 待处理 + {running} 执行中 | 状态：{processing_status}"
+            )
+            self.root.update_idletasks()
+
+        if threading.current_thread() is threading.main_thread():
+            _do()
+        else:
+            try:
+                self.root.after(0, _do)
+            except Exception:
+                _do()
+
+    def _task_queue_len(self) -> int:
+        with self._task_queue_lock:
+            return len(self.task_queue)
+
+    def _task_queue_append_unique(self, link: str) -> bool:
+        with self._task_queue_lock:
+            if link in self.task_queue:
+                return False
+            self.task_queue.append(link)
+            return True
+
+    def _task_queue_pop_front(self):
+        with self._task_queue_lock:
+            if not self.task_queue:
+                return None
+            return self.task_queue.pop(0)
+
+    def _task_queue_remove_if_present(self, link: str) -> bool:
+        with self._task_queue_lock:
+            if link in self.task_queue:
+                self.task_queue.remove(link)
+                return True
+            return False
+
+    def _total_queued_work(self) -> int:
+        return self._task_queue_len() + len(self.active_futures)
+
+    def _pipeline_log(self, message: str):
+        """写入 src/agent/pipeline.log，便于排查卡住、超时（多线程安全）"""
+        try:
+            path = os.path.join(BASE_DIR, "pipeline.log")
+            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            th = threading.current_thread().name
+            line = f"[{ts}] [{th}] {message}\n"
+            with self._pipeline_log_lock:
+                with open(path, "a", encoding="utf-8") as f:
+                    f.write(line)
+        except Exception:
+            pass
 
     # 恢复未完成任务
     def recover_unfinished_tasks(self):
@@ -2518,14 +2941,13 @@ class App:
             self.append_log(f"发现 {len(unfinished_tasks)} 个未完成任务，正在恢复...")
             for task in unfinished_tasks:
                 link = task.get("link")
-                if link not in self.task_queue:
-                    self.task_queue.append(link)
+                self._task_queue_append_unique(link)
             
             self.append_log(f"已恢复 {len(unfinished_tasks)} 个任务到队列")
-            self.append_log(f"当前队列长度：{len(self.task_queue)}")
+            self.append_log(f"当前待处理：{self._task_queue_len()}")
             
             # 自动开始处理队列
-            if not self.processing_queue and self.task_queue:
+            if not self.processing_queue and self._task_queue_len() > 0:
                 self.start_queue_processing()
         else:
             self.append_log("无未完成任务需要恢复")
@@ -2638,14 +3060,98 @@ class App:
             # 异常时返回默认标题
             return "未知标题"
     
+    def _feishu_sync_enabled(self):
+        """是否将生成结果同步到飞书（config.json 持久化 feishu_sync_enabled）。"""
+        return bool(CONFIG.get("feishu_sync_enabled", False))
+
+    def _feishu_upload_effective_for_link(self, link):
+        """任务级可覆盖：feishu_sync_override True/False 优先，否则用全局勾选。"""
+        for task in self.history.get("tasks", []):
+            if task.get("link") == link:
+                o = task.get("feishu_sync_override")
+                if o is not None:
+                    return bool(o)
+                break
+        return self._feishu_sync_enabled()
+
+    def _make_feishu_kb(self):
+        """飞书应用凭证：config.json 的 feishu_app_id / feishu_app_secret，或环境变量 FEISHU_APP_ID / FEISHU_APP_SECRET。"""
+        try:
+            from feishu_integration import FeishuKnowledgeBase
+        except ImportError:
+            return None
+        aid = (
+            (CONFIG.get("feishu_app_id") or "").strip()
+            or (os.environ.get("FEISHU_APP_ID") or "").strip()
+        )
+        sec = (
+            (CONFIG.get("feishu_app_secret") or "").strip()
+            or (os.environ.get("FEISHU_APP_SECRET") or "").strip()
+        )
+        if not aid or not sec:
+            return None
+        return FeishuKnowledgeBase(aid, sec)
+
+    def _resolve_feishu_folder_for_task(self):
+        """单任务飞书路径：主界面「本任务」输入优先，否则默认路径。"""
+        if hasattr(self, "task_feishu_folder_var"):
+            t = self.task_feishu_folder_var.get().strip()
+            if t:
+                return t
+        d = (CONFIG.get("feishu_default_folder_path") or "").strip()
+        return d or None
+
+    def _run_feishu_upload_if_enabled(self, link, md_file, user_prompt, feishu_folder_path=None):
+        """生成 MD 后的飞书上传：受全局/任务级同步开关与 AI 配置中的凭证控制。"""
+        if not self._feishu_upload_effective_for_link(link):
+            self.append_log("未开启「同步到飞书」，跳过上传步骤", "INFO")
+            self.update_task_status(link, "feishu_upload", "completed", "未开启飞书同步")
+            return
+        self.update_task_status(link, "feishu_upload", "in_progress")
+        self.update_progress(90, "上传到飞书...")
+        try:
+            with open(md_file, "r", encoding="utf-8") as f:
+                md_content = f.read()
+            feishu = self._make_feishu_kb()
+            if feishu is None:
+                self.append_log(
+                    "未配置飞书凭证：请在「AI配置」中填写飞书 App ID / App Secret 并保存，"
+                    "或设置环境变量 FEISHU_APP_ID、FEISHU_APP_SECRET；"
+                    f"当前 config.json 路径：{CONFIG_FILE}",
+                    "WARNING",
+                )
+                self.update_task_status(link, "feishu_upload", "completed", "未配置飞书凭证")
+                return
+            prompt_folder = feishu.parse_feishu_folder_from_prompt(user_prompt)
+            default_cfg = (CONFIG.get("feishu_default_folder_path") or "").strip() or None
+            final_folder = feishu_folder_path or prompt_folder or default_cfg
+            folder_token_cfg = (CONFIG.get("feishu_folder_token") or "").strip() or None
+            doc_title = os.path.basename(md_file).replace(".md", "")
+            doc_token = feishu.upload_document(
+                doc_title,
+                md_content,
+                feishu_folder_path=final_folder,
+                folder_token=folder_token_cfg,
+            )
+            if doc_token:
+                self.append_log(f"文档已上传到飞书：{doc_token}")
+                self.update_task_status(link, "feishu_upload", "completed", doc_token)
+            else:
+                self.append_log("上传到飞书失败")
+                self.update_task_status(link, "feishu_upload", "failed")
+        except Exception as e:
+            self.append_log(f"飞书上传异常：{e}")
+            self.update_task_status(link, "feishu_upload", "failed")
+
     # 添加任务到历史记录
-    def add_task_to_history(self, link, user_prompt="", feishu_folder_path=None):
+    def add_task_to_history(self, link, user_prompt="", feishu_folder_path=None, feishu_sync_override=None):
         """添加任务到历史记录
         
         Args:
             link: 视频链接
             user_prompt: 用户提示词
-            feishu_folder_path: 飞书文件夹路径
+            feishu_folder_path: 飞书文件夹路径（单任务/单批覆盖）
+            feishu_sync_override: 是否同步飞书 None=跟随全局勾选 True/False=本任务覆盖
             
         Returns:
             任务对象
@@ -2659,6 +3165,8 @@ class App:
                     task["user_prompt"] = user_prompt
                 if feishu_folder_path:
                     task["feishu_folder_path"] = feishu_folder_path
+                if feishu_sync_override is not None:
+                    task["feishu_sync_override"] = feishu_sync_override
                 task["updated_at"] = datetime.now().isoformat()
                 save_history(self.history)
                 return task
@@ -2674,6 +3182,7 @@ class App:
             "status": "pending",
             "user_prompt": user_prompt,
             "feishu_folder_path": feishu_folder_path,
+            "feishu_sync_override": feishu_sync_override,
             "stages": {
                 "download": {"status": "pending", "result": None},
                 "transcribe": {"status": "pending", "result": None},
@@ -2731,10 +3240,10 @@ class App:
         
         # 更新按钮样式
         if hasattr(self, 'nav_video_btn') and hasattr(self, 'nav_chat_btn'):
-            self.nav_video_btn.configure(bg="#0066cc", fg="#ffffff")
-            self.nav_chat_btn.configure(bg="#f0f4f8", fg="#333333")
+            self.nav_video_btn.configure(bg=UI_CARD, fg=UI_ACCENT)
+            self.nav_chat_btn.configure(bg=UI_BG, fg=UI_TEXT_MUTED)
         if hasattr(self, 'nav_multimodal_btn'):
-            self.nav_multimodal_btn.configure(bg="#f0f4f8", fg="#333333")
+            self.nav_multimodal_btn.configure(bg=UI_BG, fg=UI_TEXT_MUTED)
         
         self.current_page = "video"
         self.root.title(APP_TITLE)
@@ -2759,7 +3268,7 @@ class App:
                 self.chat_page = AIChatPage(self.content_frame)
             elif CHAT_GUI_AVAILABLE:
                 # 回退到旧的ChatGUI
-                self.chat_page = tk.Frame(self.content_frame, bg="#f0f4f8")
+                self.chat_page = tk.Frame(self.content_frame, bg=UI_BG)
                 chat_gui = ChatGUI(self.chat_page)
             else:
                 messagebox.showerror("错误", "AI问答系统模块未安装")
@@ -2770,10 +3279,10 @@ class App:
         
         # 更新按钮样式
         if hasattr(self, 'nav_video_btn') and hasattr(self, 'nav_chat_btn'):
-            self.nav_video_btn.configure(bg="#f0f4f8", fg="#333333")
-            self.nav_chat_btn.configure(bg="#0066cc", fg="#ffffff")
+            self.nav_video_btn.configure(bg=UI_BG, fg=UI_TEXT_MUTED)
+            self.nav_chat_btn.configure(bg=UI_CARD, fg=UI_ACCENT)
         if hasattr(self, 'nav_multimodal_btn'):
-            self.nav_multimodal_btn.configure(bg="#f0f4f8", fg="#333333")
+            self.nav_multimodal_btn.configure(bg=UI_BG, fg=UI_TEXT_MUTED)
         
         self.current_page = "chat"
         self.root.title(f"{APP_TITLE} - AI问答")
@@ -2804,10 +3313,10 @@ class App:
         
         # 更新按钮样式
         if hasattr(self, 'nav_video_btn') and hasattr(self, 'nav_chat_btn'):
-            self.nav_video_btn.configure(bg="#f0f4f8", fg="#333333")
-            self.nav_chat_btn.configure(bg="#f0f4f8", fg="#333333")
+            self.nav_video_btn.configure(bg=UI_BG, fg=UI_TEXT_MUTED)
+            self.nav_chat_btn.configure(bg=UI_BG, fg=UI_TEXT_MUTED)
         if hasattr(self, 'nav_multimodal_btn'):
-            self.nav_multimodal_btn.configure(bg="#0066cc", fg="#ffffff")
+            self.nav_multimodal_btn.configure(bg=UI_CARD, fg=UI_ACCENT)
         
         self.current_page = "multimodal"
         self.root.title(f"{APP_TITLE} - 文档处理")
@@ -2851,10 +3360,10 @@ class App:
     
     # 显示历史记录
     def show_history(self):
-        """显示历史记录窗口"""
+        """显示历史记录窗口 - 增强版：支持实时状态、停止按钮、队列排序"""
         history_window = tk.Toplevel(self.root)
         history_window.title("历史记录查询")
-        history_window.geometry("1000x600")
+        history_window.geometry("1200x700")
         history_window.configure(bg="#f0f4f8")
         
         # 设置样式
@@ -2876,7 +3385,21 @@ class App:
             foreground="#0066cc",
             bg="#f0f4f8"
         )
-        title_label.pack(anchor=tk.W)
+        title_label.pack(side=tk.LEFT)
+        
+        # 刷新按钮
+        refresh_btn = tk.Button(
+            title_frame,
+            text="🔄 刷新",
+            font=("微软雅黑", 10),
+            bg="#2196F3",
+            fg="white",
+            cursor="hand2",
+            relief=tk.FLAT,
+            padx=15,
+            pady=5
+        )
+        refresh_btn.pack(side=tk.RIGHT, padx=5)
         
         # 历史记录列表
         tree_frame = tk.Frame(main_frame, bg="#ffffff")
@@ -2887,8 +3410,8 @@ class App:
         tree_frame.grid_rowconfigure(0, weight=1)
         tree_frame.grid_columnconfigure(0, weight=1)
         
-        # 创建树状图
-        columns = ("id", "title", "link", "status", "created_at", "updated_at")
+        # 创建树状图 - 新增"当前阶段"和"队列位置"列
+        columns = ("id", "title", "link", "status", "current_stage", "queue_pos", "created_at", "updated_at")
         tree = ttk.Treeview(tree_frame, columns=columns, show="headings")
         
         # 设置列标题
@@ -2896,16 +3419,20 @@ class App:
         tree.heading("title", text="标题")
         tree.heading("link", text="视频链接")
         tree.heading("status", text="状态")
+        tree.heading("current_stage", text="当前阶段")
+        tree.heading("queue_pos", text="队列位置")
         tree.heading("created_at", text="创建时间")
         tree.heading("updated_at", text="更新时间")
         
         # 设置列宽
-        tree.column("id", width=100)
-        tree.column("title", width=200)
-        tree.column("link", width=300)
-        tree.column("status", width=100)
-        tree.column("created_at", width=150)
-        tree.column("updated_at", width=150)
+        tree.column("id", width=80)
+        tree.column("title", width=180)
+        tree.column("link", width=250)
+        tree.column("status", width=80)
+        tree.column("current_stage", width=120)
+        tree.column("queue_pos", width=80)
+        tree.column("created_at", width=130)
+        tree.column("updated_at", width=130)
         
         # 添加垂直滚动条
         v_scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
@@ -2924,18 +3451,15 @@ class App:
         def on_mouse_wheel(event):
             try:
                 if event.state & 0x1:
-                    # Shift键被按下，水平滚动
                     tree.xview_scroll(-1 * (event.delta // 120), "units")
                 else:
-                    # 垂直滚动
                     tree.yview_scroll(-1 * (event.delta // 120), "units")
             except Exception:
-                # 忽略组件已销毁的错误
                 pass
         
         tree.bind_all("<MouseWheel>", on_mouse_wheel)
         
-        # 绑定窗口关闭事件，解绑鼠标滚轮事件
+        # 绑定窗口关闭事件
         def on_window_close():
             try:
                 tree.unbind_all("<MouseWheel>")
@@ -2945,48 +3469,99 @@ class App:
         
         history_window.protocol("WM_DELETE_WINDOW", on_window_close)
         
-        # 填充数据 - 按创建时间降序排序
-        tasks = self.history.get("tasks", [])
-        # 按created_at字段降序排序
-        tasks.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        # 阶段名称映射
+        stage_names = {
+            "download": "📥 下载中",
+            "transcribe": "🎤 转写中",
+            "ai_analysis": "🤖 AI分析中",
+            "generate_md": "📝 生成文档中",
+            "download_failed": "❌ 下载失败",
+            "transcribe_failed": "❌ 转写失败",
+            "ai_analysis_failed": "❌ AI分析失败",
+            "generate_md_failed": "❌ 生成失败",
+            "completed": "✅ 已完成",
+            "cancelled": "🛑 已取消",
+            "pending": "⏳ 等待中",
+            "unknown": "❓ 未知"
+        }
         
-        for task in tasks:
-            task_id = task.get("id", "")
-            title = task.get("title", "")
-            # 如果标题为None或空字符串，显示"生成中"的标记
-            if not title:
-                title = "生成中"
-            link = task.get("link", "")
-            status = task.get("status", "")
-            created_at = task.get("created_at", "")
-            updated_at = task.get("updated_at", "")
+        # 填充数据的函数
+        def refresh_tree():
+            """刷新树状图数据"""
+            # 清空现有数据
+            for item in tree.get_children():
+                tree.delete(item)
             
-            # 根据状态设置标签
-            tag = status
-            if status == "completed":
-                tag = "completed"
-            elif status == "failed":
-                tag = "failed"
-            elif status == "in_progress":
-                tag = "in_progress"
-            else:
-                tag = "pending"
+            # 获取任务数据
+            tasks = self.history.get("tasks", [])
+            tasks.sort(key=lambda x: x.get("created_at", ""), reverse=True)
             
-            # 插入数据并应用标签
-            item_id = tree.insert("", "end", values=(
-                task_id,
-                title,
-                link,
-                status,
-                created_at,
-                updated_at
-            ), tags=(tag,))
+            for task in tasks:
+                task_id = task.get("id", "")
+                title = task.get("title", "")
+                if not title:
+                    title = "生成中..."
+                link = task.get("link", "")
+                status = task.get("status", "")
+                created_at = task.get("created_at", "")
+                updated_at = task.get("updated_at", "")
+                
+                # 获取当前阶段
+                current_stage = self.get_task_current_stage(link)
+                stage_display = stage_names.get(current_stage, current_stage)
+                
+                # 获取队列位置
+                queue_pos = ""
+                if link in self.active_futures:
+                    queue_pos = "执行中"
+                elif link in self.task_queue:
+                    with self._task_queue_lock:
+                        pos = self.task_queue.index(link) + 1
+                    queue_pos = f"第{pos}位（待处理）"
+                
+                # 根据状态设置标签
+                tag = status
+                if status == "completed":
+                    tag = "completed"
+                elif status == "failed":
+                    tag = "failed"
+                elif status == "in_progress" or current_stage in ["download", "transcribe", "ai_analysis", "generate_md"]:
+                    tag = "in_progress"
+                elif status == "cancelled":
+                    tag = "cancelled"
+                else:
+                    tag = "pending"
+                
+                # 插入数据
+                tree.insert("", "end", values=(
+                    task_id,
+                    title,
+                    link,
+                    status,
+                    stage_display,
+                    queue_pos,
+                    created_at,
+                    updated_at
+                ), tags=(tag,))
+            
+            # 设置标签颜色
+            tree.tag_configure("completed", background="#e6ffe6")
+            tree.tag_configure("failed", background="#ffe6e6")
+            tree.tag_configure("in_progress", background="#fff0e6")
+            tree.tag_configure("pending", background="#f0f0f0")
+            tree.tag_configure("cancelled", background="#ffe0e0")
         
-        # 设置标签颜色
-        tree.tag_configure("completed", background="#e6ffe6")  # 绿色背景
-        tree.tag_configure("failed", background="#ffe6e6")      # 红色背景
-        tree.tag_configure("in_progress", background="#fff0e6")  # 橙色背景
-        tree.tag_configure("pending", background="#f0f0f0")     # 灰色背景
+        # 初始填充
+        refresh_tree()
+        refresh_btn.config(command=refresh_tree)
+        
+        # 自动刷新（每3秒）
+        def auto_refresh():
+            if history_window.winfo_exists():
+                refresh_tree()
+                history_window.after(3000, auto_refresh)
+        
+        auto_refresh()
         
         # 清理完成任务的缓存文件
         self.cleanup_completed_tasks()
@@ -3105,8 +3680,7 @@ class App:
             if task.get("status") not in ["completed", "failed"]:
                 def continue_task():
                     link = task.get("link")
-                    if link not in self.task_queue:
-                        self.task_queue.append(link)
+                    self._task_queue_append_unique(link)
                     self.append_log(f"继续处理任务：{link}")
                     if not self.processing_queue:
                         self.start_queue_processing()
@@ -3213,8 +3787,7 @@ class App:
             if task.get("status") not in ["completed", "failed"]:
                 def continue_task():
                     link = task.get("link")
-                    if link not in self.task_queue:
-                        self.task_queue.append(link)
+                    self._task_queue_append_unique(link)
                     self.update_queue_status()
                     self.append_log(f"继续处理任务：{link}")
                     if not self.processing_queue:
@@ -3246,13 +3819,12 @@ class App:
                 
                 if task:
                     link = task.get("link")
-                    if link not in self.task_queue:
-                        self.task_queue.append(link)
+                    self._task_queue_append_unique(link)
                     self.update_queue_status()
                     self.append_log(f"继续处理任务：{link}")
             
             # 自动开始处理队列
-            if not self.processing_queue and self.task_queue:
+            if not self.processing_queue and self._task_queue_len() > 0:
                 self.start_queue_processing()
         
         # 刷新按钮
@@ -3322,13 +3894,12 @@ class App:
                 
                 if task:
                     link = task.get("link")
-                    if link not in self.task_queue:
-                        self.task_queue.append(link)
+                    self._task_queue_append_unique(link)
                     self.update_queue_status()
                     self.append_log(f"开始处理任务：{link}")
             
             # 自动开始处理队列
-            if not self.processing_queue and self.task_queue:
+            if not self.processing_queue and self._task_queue_len() > 0:
                 self.start_queue_processing()
         
         def set_prompt_for_task():
@@ -3412,6 +3983,7 @@ class App:
                 messagebox.showinfo("提示", "请选择要停止的任务")
                 return
             
+            stopped_count = 0
             for item_id in selected:
                 item = tree.item(item_id)
                 task_id = item["values"][0]
@@ -3425,10 +3997,70 @@ class App:
                 
                 if task:
                     link = task.get("link")
-                    if link in self.task_queue:
-                        self.task_queue.remove(link)
-                        self.update_queue_status()
-                        self.append_log(f"停止处理任务：{link}")
+                    # 使用新的stop_task方法停止任务
+                    if self.stop_task(link):
+                        stopped_count += 1
+                        # 从队列中移除
+                        if self._task_queue_remove_if_present(link):
+                            self.update_queue_status()
+            
+            if stopped_count > 0:
+                messagebox.showinfo("成功", f"已停止 {stopped_count} 个任务")
+                refresh_tree()
+        
+        def move_task_up():
+            """将选中的任务在队列中上移"""
+            selected = tree.selection()
+            if not selected:
+                messagebox.showinfo("提示", "请选择要上移的任务")
+                return
+            
+            if len(selected) > 1:
+                messagebox.showinfo("提示", "请只选择一个任务进行移动")
+                return
+            
+            item = tree.item(selected[0])
+            task_id = item["values"][0]
+            
+            # 查找任务
+            task = None
+            for t in self.history.get("tasks", []):
+                if t.get("id") == task_id:
+                    task = t
+                    break
+            
+            if task:
+                link = task.get("link")
+                if self.move_task_in_queue(link, "up"):
+                    messagebox.showinfo("成功", "任务已上移")
+                    refresh_tree()
+        
+        def move_task_down():
+            """将选中的任务在队列中下移"""
+            selected = tree.selection()
+            if not selected:
+                messagebox.showinfo("提示", "请选择要下移的任务")
+                return
+            
+            if len(selected) > 1:
+                messagebox.showinfo("提示", "请只选择一个任务进行移动")
+                return
+            
+            item = tree.item(selected[0])
+            task_id = item["values"][0]
+            
+            # 查找任务
+            task = None
+            for t in self.history.get("tasks", []):
+                if t.get("id") == task_id:
+                    task = t
+                    break
+            
+            if task:
+                link = task.get("link")
+                if self.move_task_in_queue(link, "down"):
+                    messagebox.showinfo("成功", "任务已下移")
+                    refresh_tree()
         
         def clear_completed():
             """清理已完成的任务"""
@@ -3447,6 +4079,8 @@ class App:
         ttk.Button(action_frame, text="继续处理", command=continue_task).pack(side=tk.LEFT, padx=10)
         ttk.Button(action_frame, text="批量开始", command=batch_start).pack(side=tk.LEFT, padx=10)
         ttk.Button(action_frame, text="批量停止", command=batch_stop).pack(side=tk.LEFT, padx=10)
+        ttk.Button(action_frame, text="⬆️ 上移", command=move_task_up).pack(side=tk.LEFT, padx=10)
+        ttk.Button(action_frame, text="⬇️ 下移", command=move_task_down).pack(side=tk.LEFT, padx=10)
         ttk.Button(action_frame, text="设置提示词", command=set_prompt_for_task).pack(side=tk.LEFT, padx=10)
         ttk.Button(action_frame, text="清理已完成", command=clear_completed).pack(side=tk.LEFT, padx=10)
         ttk.Button(action_frame, text="刷新", command=refresh_tree).pack(side=tk.LEFT, padx=10)
@@ -3542,19 +4176,25 @@ class App:
             
             prompt_text.bind("<KeyRelease>", update_char_count)
             
-            # 飞书文件夹设置
+            # 飞书：本批次是否同步 + 单批路径（覆盖 AI 配置中的默认路径）
             feishu_frame = tk.Frame(main_frame, bg="#ffffff")
             feishu_frame.pack(fill=tk.X, pady=(0, 20))
             feishu_frame.configure(highlightbackground="#0066cc", highlightthickness=1)
             
-            ttk.Label(feishu_frame, text="飞书文件夹路径（可选）：", font=("微软雅黑", 10), background="#ffffff").pack(anchor=tk.W, padx=15, pady=(15, 5))
+            batch_feishu_sync_var = tk.BooleanVar(value=bool(CONFIG.get("feishu_sync_enabled", False)))
+            ttk.Checkbutton(
+                feishu_frame,
+                text="本批次同步到飞书（关闭则仅入队分析，不触发飞书上传；与主界面勾选独立可改）",
+                variable=batch_feishu_sync_var,
+            ).pack(anchor=tk.W, padx=15, pady=(12, 5))
             
-            feishu_folder_var = tk.StringVar()
+            tk.Label(feishu_frame, text="本批次飞书文件夹路径（可选，留空用 AI 配置中的默认路径）：", font=("微软雅黑", 10), bg="#ffffff", fg="#333").pack(anchor=tk.W, padx=15, pady=(5, 5))
+            
+            feishu_folder_var = tk.StringVar(value=(CONFIG.get("feishu_default_folder_path") or ""))
             feishu_folder_entry = ttk.Entry(feishu_frame, textvariable=feishu_folder_var, font=("微软雅黑", 10))
-            feishu_folder_entry.pack(fill=tk.X, padx=15, pady=(0, 15))
+            feishu_folder_entry.pack(fill=tk.X, padx=15, pady=(0, 10))
             
-            # 示例提示
-            ttk.Label(feishu_frame, text="示例：就业技术文档集/八股", font=("微软雅黑", 9), foreground="#999", background="#ffffff").pack(anchor=tk.W, padx=15, pady=(0, 10))
+            tk.Label(feishu_frame, text="示例：就业技术文档集/八股", font=("微软雅黑", 9), fg="#999", bg="#ffffff").pack(anchor=tk.W, padx=15, pady=(0, 10))
             
             # 按钮区域
             button_frame = tk.Frame(main_frame, bg="#f0f4f8")
@@ -3563,7 +4203,11 @@ class App:
             def start_import():
                 """开始导入"""
                 user_prompt = prompt_text.get("1.0", tk.END).strip()
-                feishu_folder_path = feishu_folder_var.get().strip() or None
+                if batch_feishu_sync_var.get():
+                    raw_f = feishu_folder_var.get().strip()
+                    feishu_folder_path = raw_f or (CONFIG.get("feishu_default_folder_path") or "").strip() or None
+                else:
+                    feishu_folder_path = None
                 
                 # 批量添加到历史记录
                 self.append_log(f"开始创建 {len(links)} 个任务的历史记录")
@@ -3573,9 +4217,13 @@ class App:
                 for link in links:
                     # 检查链接是否已经导入
                     if not self.is_link_already_imported(link):
-                        self.add_task_to_history(link, user_prompt, feishu_folder_path)
-                        if link not in self.task_queue:
-                            self.task_queue.append(link)
+                        self.add_task_to_history(
+                            link,
+                            user_prompt,
+                            feishu_folder_path,
+                            feishu_sync_override=batch_feishu_sync_var.get(),
+                        )
+                        self._task_queue_append_unique(link)
                         new_links_count += 1
                     else:
                         existing_links_count += 1
@@ -3587,10 +4235,10 @@ class App:
                 self.update_queue_status()
                 
                 self.append_log(f"成功导入 {new_links_count} 个视频链接到队列")
-                self.append_log(f"当前队列长度：{len(self.task_queue)}")
+                self.append_log(f"当前待处理：{self._task_queue_len()}，执行中：{len(self.active_futures)}")
                 
-                # 自动开始处理队列
-                if not self.processing_queue and new_links_count > 0:
+                # 自动开始处理队列（已在处理时由调度器自动取新任务）
+                if new_links_count > 0 and not self.processing_queue:
                     self.start_queue_processing()
                 
                 import_window.destroy()
@@ -3639,40 +4287,38 @@ class App:
             self.append_log(f"解析Excel文件失败：{e}")
             raise
     
-    # 开始队列处理
+
+    # 开始队列处理（线程池滑动窗口：最多 max_workers 路并行，FIFO，新入队任务不必等整批结束）
     def start_queue_processing(self):
-        if not self.task_queue:
-            self.append_log("队列为空，无需处理")
-            self.update_queue_status()
-            return
-        
-        if self.processing_queue:
-            self.append_log("队列正在处理中")
-            self.update_queue_status()
-            return
-        
-        self.processing_queue = True
+        with self._scheduler_start_lock:
+            if self.processing_queue:
+                self.append_log("队列调度已在运行，新任务将在有空闲线程时按顺序自动执行")
+                self.update_queue_status()
+                return
+            if self._task_queue_len() == 0:
+                self.append_log("队列为空，无需处理")
+                self.update_queue_status()
+                return
+            self.processing_queue = True
+
         self.update_queue_status()
-        
-        # 限制一次处理的任务数量，避免系统过载
-        batch_size = min(len(self.task_queue), self.max_workers * 2)  # 每次处理的任务数量为线程数的2倍
-        task_links = self.task_queue[:batch_size]  # 只处理批次内的任务
-        remaining_tasks = self.task_queue[batch_size:]  # 剩余任务
-        
-        self.append_log(f"开始处理队列任务，本次批次：{len(task_links)} 个任务")
-        self.append_log(f"使用线程池并行处理，最大线程数：{self.max_workers}")
-        self.append_log(f"队列中剩余任务：{len(remaining_tasks)} 个")
-        self.append_log("遵循先进先出原则，按照提交顺序处理任务")
-        
-        # 使用线程池并行处理任务，保持先进先出顺序
-        tasks = []
-        
-        # 清空之前的活跃任务列表
-        self.active_futures = []
-        
-        for i, link in enumerate(task_links):
-            task_number = i + 1
-            # 获取任务绑定的用户提示词和飞书文件夹路径
+        self.append_log(
+            f"启动队列调度：最大并行 {self.max_workers}，当前待处理 {self._task_queue_len()}（先进先出，接近 Java 线程池行为）"
+        )
+        self._pipeline_log(f"scheduler_start workers={self.max_workers} pending={self._task_queue_len()}")
+        threading.Thread(target=self._queue_scheduler_loop, daemon=True).start()
+
+    def _queue_scheduler_loop(self):
+        """维持不超过 max_workers 个并发；有空槽即从队首取任务提交。"""
+        import time as time_mod
+
+        poll = float(os.environ.get("PIPELINE_SCHEDULER_POLL_SEC", "0.5"))
+        timeout_sec = int(os.environ.get("PIPELINE_BATCH_TIMEOUT_SEC", "7200"))
+        wall0 = time_mod.time()
+        active = {}
+        completed_count = 0
+
+        def _submit_link(link: str) -> None:
             task_prompt = ""
             feishu_folder_path = None
             for task in self.history.get("tasks", []):
@@ -3680,68 +4326,219 @@ class App:
                     task_prompt = task.get("user_prompt", "")
                     feishu_folder_path = task.get("feishu_folder_path")
                     break
-            
-            # 如果任务没有绑定提示词，使用全局的
             if not task_prompt:
                 task_prompt = self.user_prompt_var.get().strip()
-            
-            self.append_log(f"提交任务 {task_number}/{len(task_links)} 到线程池：{link}")
             self.append_log(f"任务提示词：{task_prompt[:50]}{'...' if len(task_prompt) > 50 else ''}")
             if feishu_folder_path:
                 self.append_log(f"飞书文件夹路径：{feishu_folder_path}")
-            
-            # 提交任务到线程池
-            future = self.executor.submit(self._run_pipeline, link, task_prompt, feishu_folder_path)
-            tasks.append(future)
-            self.active_futures.append(future)
-        
-        # 等待所有任务完成
-        def wait_for_completion():
-            try:
-                # 等待所有任务完成
-                completed_count = 0
-                total_tasks = len(tasks)
-                
-                for future in concurrent.futures.as_completed(tasks):
+            cancel_event = threading.Event()
+            self.task_cancel_flags[link] = cancel_event
+            fut = self.executor.submit(
+                self._run_pipeline_with_cancel, link, task_prompt, feishu_folder_path, cancel_event
+            )
+            self.active_futures[link] = fut
+            active[link] = fut
+            self.append_log(
+                f"提交到线程池（并行 {len(active)}/{self.max_workers}）：{link[:120]}{'...' if len(link) > 120 else ''}"
+            )
+            self._pipeline_log(f"submit active={len(active)}")
+            self.update_queue_status()
+
+        try:
+            while True:
+                while len(active) < self.max_workers:
+                    link = self._task_queue_pop_front()
+                    if link is None:
+                        break
+                    _submit_link(link)
+
+                if not active:
+                    if self._task_queue_len() == 0:
+                        self.append_log("所有队列任务处理完成")
+                        self._pipeline_log("scheduler_done all_complete")
+                        break
+                    time_mod.sleep(poll)
+                    continue
+
+                if time_mod.time() - wall0 > timeout_sec:
+                    self.append_log(f"队列调度总超时（{timeout_sec}s），正在取消未完成任务", "ERROR")
+                    self._pipeline_log(f"scheduler_timeout active={len(active)}")
+                    for f in list(active.values()):
+                        f.cancel()
+                    for link in list(active.keys()):
+                        active.pop(link, None)
+                        self.task_cancel_flags.pop(link, None)
+                        self.active_futures.pop(link, None)
+                    break
+
+                done, _ = concurrent.futures.wait(
+                    set(active.values()),
+                    timeout=poll,
+                    return_when=concurrent.futures.FIRST_COMPLETED,
+                )
+                for fut in done:
+                    link = None
+                    for lk, ff in list(active.items()):
+                        if ff is fut:
+                            link = lk
+                            break
+                    if link is None:
+                        continue
                     try:
-                        future.result()
-                        completed_count += 1
-                        self.append_log(f"任务完成进度：{completed_count}/{total_tasks}")
+                        fut.result()
+                    except concurrent.futures.CancelledError:
+                        self.append_log("任务已取消", "WARNING")
+                        self._pipeline_log("future_cancelled")
                     except Exception as e:
-                        self.append_log(f"任务执行异常：{e}")
+                        self.append_log(f"任务执行异常：{type(e).__name__}: {e}", "ERROR")
+                        self._pipeline_log(f"future_exc {type(e).__name__}: {e!r}")
+                    finally:
                         completed_count += 1
-                
-                self.append_log("本批次任务处理完成")
-                
-                # 从队列中移除已处理的任务
-                for link in task_links:
-                    if link in self.task_queue:
-                        self.task_queue.remove(link)
-                
-                # 更新队列状态
-                self.processing_queue = False
-                self.update_queue_status()
-                
-                # 清空活跃任务列表
-                self.active_futures = []
-                
-                # 如果队列中还有新任务，继续处理
-                if self.task_queue:
-                    self.append_log(f"队列中还有 {len(self.task_queue)} 个新任务，继续处理下一批次")
-                    # 短暂延迟，避免系统过载
-                    time.sleep(0.5)
-                    self.start_queue_processing()
-                else:
-                    self.append_log("所有队列任务处理完成")
-            except Exception as e:
-                self.append_log(f"队列处理异常：{e}")
-                self.processing_queue = False
-                self.update_queue_status()
-                # 清空活跃任务列表
-                self.active_futures = []
+                        active.pop(link, None)
+                        self.task_cancel_flags.pop(link, None)
+                        self.active_futures.pop(link, None)
+                        self.append_log(
+                            f"任务完成进度：{completed_count}（当前并行 {len(active)}/{self.max_workers}）"
+                        )
+                        self.update_queue_status()
+        except Exception as e:
+            self.append_log(f"队列调度异常：{type(e).__name__}: {e}", "ERROR")
+            import traceback
+            self.append_log(traceback.format_exc(), "ERROR")
+            self._pipeline_log(f"scheduler_exc {type(e).__name__}: {e!r}")
+        finally:
+            self.processing_queue = False
+            self.update_queue_status()
+
+    def stop_task(self, link: str) -> bool:
+        """停止正在执行的任务
         
-        # 在后台等待完成
-        threading.Thread(target=wait_for_completion, daemon=True).start()
+        Args:
+            link: 任务链接
+            
+        Returns:
+            bool: 是否成功停止
+        """
+        try:
+            # 设置取消标志
+            if link in self.task_cancel_flags:
+                self.task_cancel_flags[link].set()
+                self.append_log(f"已发送停止信号：{link}")
+            
+            # 取消future
+            if link in self.active_futures:
+                future = self.active_futures[link]
+                if future and not future.done():
+                    cancelled = future.cancel()
+                    if cancelled:
+                        self.append_log(f"已取消任务：{link}")
+                    else:
+                        self.append_log(f"任务无法取消（可能已在运行）：{link}")
+            
+            # 更新任务状态
+            self.update_task_status(link, "download", "cancelled")
+            self.update_task_status(link, "transcribe", "cancelled")
+            self.update_task_status(link, "ai_analysis", "cancelled")
+            self.update_task_status(link, "generate_md", "cancelled")
+            
+            # 从历史记录中更新状态
+            for task in self.history.get("tasks", []):
+                if task.get("link") == link:
+                    task["status"] = "cancelled"
+                    break
+            save_history(self.history)
+            
+            return True
+        except Exception as e:
+            self.append_log(f"停止任务失败：{e}")
+            return False
+    
+    def move_task_in_queue(self, link: str, direction: str) -> bool:
+        """调整任务在队列中的位置
+        
+        Args:
+            link: 任务链接
+            direction: 移动方向，"up"或"down"
+            
+        Returns:
+            bool: 是否成功移动
+        """
+        try:
+            with self._task_queue_lock:
+                if link not in self.task_queue:
+                    self.append_log(f"任务不在待处理队列中（可能正在执行）：{link}")
+                    return False
+
+                idx = self.task_queue.index(link)
+
+                if direction == "up":
+                    if idx == 0:
+                        self.append_log("任务已在队列最前面")
+                        return False
+                    self.task_queue[idx], self.task_queue[idx - 1] = (
+                        self.task_queue[idx - 1],
+                        self.task_queue[idx],
+                    )
+                    self.append_log(f"任务已上移：{link}")
+
+                elif direction == "down":
+                    if idx == len(self.task_queue) - 1:
+                        self.append_log("任务已在队列最后面")
+                        return False
+                    self.task_queue[idx], self.task_queue[idx + 1] = (
+                        self.task_queue[idx + 1],
+                        self.task_queue[idx],
+                    )
+                    self.append_log(f"任务已下移：{link}")
+
+                else:
+                    self.append_log(f"未知的移动方向：{direction}")
+                    return False
+
+            self.update_queue_status()
+            return True
+
+        except Exception as e:
+            self.append_log(f"移动任务失败：{e}")
+            return False
+    
+    def get_task_current_stage(self, link: str) -> str:
+        """获取任务当前执行的阶段
+        
+        Args:
+            link: 任务链接
+            
+        Returns:
+            str: 当前阶段名称
+        """
+        for task in self.history.get("tasks", []):
+            if task.get("link") == link:
+                stages = task.get("stages", {})
+                # 按顺序检查各阶段状态
+                stage_order = ["download", "transcribe", "ai_analysis", "generate_md"]
+                for stage in stage_order:
+                    if stage in stages:
+                        status = stages[stage].get("status", "")
+                        if status == "in_progress":
+                            return stage
+                        elif status == "failed":
+                            return f"{stage}_failed"
+                
+                # 检查是否已完成
+                all_completed = all(
+                    stages.get(s, {}).get("status") == "completed" 
+                    for s in stage_order if s in stages
+                )
+                if all_completed:
+                    return "completed"
+                
+                # 检查是否已取消
+                if task.get("status") == "cancelled":
+                    return "cancelled"
+                
+                return "pending"
+        
+        return "unknown"
     
     # 单独重试失败阶段
     def _retry_stage(self, link, stage, task):
@@ -4097,36 +4894,8 @@ class App:
             
             self.update_task_status(link, "generate_md", "completed", md_file)
             
-            # 阶段4：上传到飞书（如果启用）
-            if self.feishu_enabled:
-                self.update_task_status(link, "feishu_upload", "in_progress")
-                self.update_progress(90, "上传到飞书...")
-                
-                try:
-                    with open(md_file, 'r', encoding='utf-8') as f:
-                        md_content = f.read()
-                    
-                    from feishu_integration import FeishuKnowledgeBase
-                    feishu = FeishuKnowledgeBase('cli_a9b7cc9aba389bc4', 'q3VZTLZZjrsNeiJheqfkocH5ReV6Rmc6')
-                    
-                    prompt_folder = feishu.parse_feishu_folder_from_prompt(user_prompt)
-                    final_folder = feishu_folder_path or prompt_folder
-                    
-                    doc_title = os.path.basename(md_file).replace('.md', '')
-                    doc_token = feishu.upload_document(doc_title, md_content, feishu_folder_path=final_folder)
-                    
-                    if doc_token:
-                        self.append_log(f"文档已上传到飞书：{doc_token}")
-                        self.update_task_status(link, "feishu_upload", "completed", doc_token)
-                    else:
-                        self.append_log("上传到飞书失败")
-                        self.update_task_status(link, "feishu_upload", "failed")
-                except Exception as e:
-                    self.append_log(f"飞书上传异常：{e}")
-                    self.update_task_status(link, "feishu_upload", "failed")
-            else:
-                self.append_log("飞书功能已禁用，跳过上传步骤", "INFO")
-                self.update_task_status(link, "feishu_upload", "completed", "飞书功能已禁用")
+            # 阶段4：上传到飞书（勾选 + AI 配置中的凭证）
+            self._run_feishu_upload_if_enabled(link, md_file, user_prompt, feishu_folder_path)
             
             self.update_progress(100, "完成")
             self.append_log("小红书图文分析完成！")
@@ -4253,36 +5022,8 @@ class App:
             
             self.update_task_status(link, "generate_md", "completed", md_file)
             
-            # 阶段4：上传到飞书（如果启用）
-            if self.feishu_enabled:
-                self.update_task_status(link, "feishu_upload", "in_progress")
-                self.update_progress(90, "上传到飞书...")
-                
-                try:
-                    with open(md_file, 'r', encoding='utf-8') as f:
-                        md_content = f.read()
-                    
-                    from feishu_integration import FeishuKnowledgeBase
-                    feishu = FeishuKnowledgeBase('cli_a9b7cc9aba389bc4', 'q3VZTLZZjrsNeiJheqfkocH5ReV6Rmc6')
-                    
-                    prompt_folder = feishu.parse_feishu_folder_from_prompt(user_prompt)
-                    final_folder = feishu_folder_path or prompt_folder
-                    
-                    doc_title = os.path.basename(md_file).replace('.md', '')
-                    doc_token = feishu.upload_document(doc_title, md_content, feishu_folder_path=final_folder)
-                    
-                    if doc_token:
-                        self.append_log(f"文档已上传到飞书：{doc_token}")
-                        self.update_task_status(link, "feishu_upload", "completed", doc_token)
-                    else:
-                        self.append_log("上传到飞书失败")
-                        self.update_task_status(link, "feishu_upload", "failed")
-                except Exception as e:
-                    self.append_log(f"飞书上传异常：{e}")
-                    self.update_task_status(link, "feishu_upload", "failed")
-            else:
-                self.append_log("飞书功能已禁用，跳过上传步骤", "INFO")
-                self.update_task_status(link, "feishu_upload", "completed", "飞书功能已禁用")
+            # 阶段4：上传到飞书
+            self._run_feishu_upload_if_enabled(link, md_file, user_prompt, feishu_folder_path)
             
             self.update_progress(100, "完成")
             self.append_log("微信公众号文章分析完成！")
@@ -4497,25 +5238,31 @@ class App:
             # 如果用户选择继续上传，不返回，继续执行后续代码
 
         # 检查任务队列大小限制
-        if len(self.task_queue) >= self.queue_max_size:
-            messagebox.showwarning("提示", f"任务队列已满（当前大小：{len(self.task_queue)}，最大限制：{self.queue_max_size}）\n请稍后再添加任务或调整队列大小限制")
+        if self._total_queued_work() >= self.queue_max_size:
+            messagebox.showwarning(
+                "提示",
+                f"任务队列已满（待处理+执行中：{self._total_queued_work()}，最大限制：{self.queue_max_size}）\n请稍后再添加任务或调整队列大小限制",
+            )
             return
 
         # 添加到任务队列
-        self.task_queue.append(link)
-        self.add_task_to_history(link, user_prompt)
+        self._task_queue_append_unique(link)
+        self.add_task_to_history(link, user_prompt, self._resolve_feishu_folder_for_task())
         self.update_queue_status()
         
         self.start_btn.config(state=tk.DISABLED)
         self.append_log(f"添加任务到队列：链接={link}")
-        self.append_log(f"当前队列长度：{len(self.task_queue)}")
-        
-        # 自动开始处理队列
-        if not self.processing_queue:
-            self.start_queue_processing()
-        
-        # 恢复按钮状态
-        self.start_btn.config(state=tk.NORMAL)
+        self.append_log(f"当前待处理：{self._task_queue_len()}，执行中：{len(self.active_futures)}")
+
+        try:
+            # 自动开始处理队列（调度已运行时，新链接会在有空闲线程时自动开始）
+            if not self.processing_queue:
+                self.start_queue_processing()
+            else:
+                self.append_log("调度运行中：新链接已入队，将在有空闲线程时按顺序自动执行")
+        finally:
+            # 确保按钮状态恢复
+            self.start_btn.config(state=tk.NORMAL)
 
     def extract_url_from_text(self, text: str) -> str:
         """从文本中提取URL"""
@@ -4555,7 +5302,17 @@ class App:
 
     # 主流程：下载 -> 转写 -> 生成MD
     def _run_pipeline(self, link: str, user_prompt: str = "", feishu_folder_path: str = None):
+        """原始流程方法（向后兼容）"""
+        self._run_pipeline_with_cancel(link, user_prompt, feishu_folder_path, None)
+    
+    def _run_pipeline_with_cancel(self, link: str, user_prompt: str = "", feishu_folder_path: str = None, cancel_event=None):
+        """支持取消的主流程"""
         try:
+            # 检查是否已取消
+            if cancel_event and cancel_event.is_set():
+                self.append_log(f"任务已取消：{link}")
+                return
+            
             # 添加任务到历史记录，更新飞书文件夹路径
             self.add_task_to_history(link, user_prompt, feishu_folder_path)
             
@@ -4595,6 +5352,14 @@ class App:
                 self.append_log("视频下载失败，流程结束。")
                 self.update_task_status(link, "download", "failed")
                 self.update_progress(0, "失败")
+                
+                self._call_ops_agent_for_error(
+                    link=link,
+                    error_message="视频下载失败：未生成本地文件（download_video 返回空）",
+                    stage="download",
+                    error_type="DownloadFailed",
+                    traceback="",
+                )
                 return
             self.update_task_status(link, "download", "completed", video_file)
 
@@ -4664,51 +5429,66 @@ class App:
                 "ai_analysis": result_data.get("ai_summary", "")
             })
 
-            # 阶段5：上传到飞书（默认禁用）
-            if self.feishu_enabled:
-                self.update_task_status(link, "feishu_upload", "in_progress")
-                self.update_progress(90, "上传到飞书...")
-                
-                # 读取Markdown文件内容
-                with open(md_file, 'r', encoding='utf-8') as f:
-                    md_content = f.read()
-                
-                try:
-                    # 导入飞书集成模块
-                    from feishu_integration import FeishuKnowledgeBase
-                    
-                    # 初始化飞书客户端
-                    feishu = FeishuKnowledgeBase('cli_a9b7cc9aba389bc4', 'q3VZTLZZjrsNeiJheqfkocH5ReV6Rmc6')
-                    
-                    # 从用户提示词中解析飞书文件夹路径
-                    prompt_folder = feishu.parse_feishu_folder_from_prompt(user_prompt)
-                    final_folder = feishu_folder_path or prompt_folder
-                    
-                    # 上传文档
-                    doc_title = os.path.basename(md_file).replace('.md', '')
-                    doc_token = feishu.upload_document(doc_title, md_content, feishu_folder_path=final_folder)
-                    
-                    if doc_token:
-                        self.append_log(f"文档已上传到飞书：{doc_token}")
-                        self.update_task_status(link, "feishu_upload", "completed", doc_token)
-                    else:
-                        self.append_log("上传到飞书失败")
-                        self.update_task_status(link, "feishu_upload", "failed")
-                except Exception as e:
-                    self.append_log(f"飞书上传异常：{e}")
-                    self.update_task_status(link, "feishu_upload", "failed")
-            else:
-                self.append_log("飞书功能已禁用，跳过上传步骤", "INFO")
-                self.update_task_status(link, "feishu_upload", "completed", "飞书功能已禁用")
+            # 阶段5：上传到飞书
+            self._run_feishu_upload_if_enabled(link, md_file, user_prompt, feishu_folder_path)
             
             self.update_progress(100, "完成")
         except Exception as e:
-            self.append_log(f"异常：{e}")
+            self.append_log(f"异常：{type(e).__name__}: {e}")
+            self._pipeline_log(f"pipeline_run_exc link={str(link)[:80]!r} err={type(e).__name__}: {e!r}")
             import traceback
+            error_traceback = traceback.format_exc()
             traceback.print_exc()
+            
             # 确保任务状态被更新为失败
             self.update_task_status(link, "download", "failed")
             self.update_progress(0, "失败")
+            
+            # 调用运维Agent分析错误
+            if self.ops_agent:
+                try:
+                    self.append_log("正在调用运维Agent分析错误...")
+                    
+                    # 获取任务ID
+                    task_id = None
+                    for task in self.history.get("tasks", []):
+                        if task.get("link") == link:
+                            task_id = task.get("id", "unknown")
+                            break
+                    
+                    # 构建错误信息
+                    error_info = {
+                        "type": type(e).__name__,
+                        "message": str(e),
+                        "traceback": error_traceback
+                    }
+                    
+                    # 获取日志（从UI日志中）
+                    logs = []
+                    try:
+                        # 尝试从日志文件或UI获取最近日志
+                        log_widget = getattr(self, "log", None)
+                        if log_widget:
+                            logs = log_widget.get("1.0", tk.END).split("\n")
+                    except Exception:
+                        pass
+
+                    # 调用运维Agent
+                    md_path = self.ops_agent.monitor_task_completion(
+                        link=link,
+                        task_id=task_id or "unknown",
+                        status="failed",
+                        logs=logs,
+                        error_info=error_info
+                    )
+                    
+                    if md_path:
+                        self.append_log(f"运维Agent分析完成，维护建议已保存: {md_path}")
+                    else:
+                        self.append_log("运维Agent分析完成，无需生成维护建议")
+                        
+                except Exception as ops_e:
+                    self.append_log(f"运维Agent调用失败: {ops_e}")
         finally:
             # 确保任务状态被正确更新
             try:
@@ -4730,6 +5510,78 @@ class App:
             # 只有在非队列处理时才启用按钮
             if not self.processing_queue:
                 self.start_btn.config(state=tk.NORMAL)
+
+    def _call_ops_agent_for_error(self, link: str, error_message: str, stage: str, 
+                                   error_type: str = "Unknown", traceback: str = ""):
+        """
+        调用运维Agent分析错误
+        
+        Args:
+            link: 任务链接
+            error_message: 错误消息
+            stage: 失败的阶段（download/transcribe/ai_analysis/generate_md）
+            error_type: 错误类型
+            traceback: 堆栈跟踪
+        """
+        if not self.ops_agent:
+            self.append_log("[运维Agent] 运维Agent未初始化，跳过错误分析")
+            return
+        
+        try:
+            self.append_log("[运维Agent] 正在调用运维Agent分析错误...")
+            self.append_log(f"[运维Agent] 错误阶段: {stage}")
+            self.append_log(f"[运维Agent] 错误类型: {error_type}")
+            self.append_log(f"[运维Agent] 错误消息: {error_message[:100]}...")
+            
+            # 获取任务ID
+            task_id = None
+            for task in self.history.get("tasks", []):
+                if task.get("link") == link:
+                    task_id = task.get("id", "unknown")
+                    break
+            
+            if not task_id:
+                task_id = f"task_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                self.append_log(f"[运维Agent] 未找到任务ID，使用临时ID: {task_id}")
+            
+            # 构建错误信息
+            error_info = {
+                "type": error_type,
+                "message": error_message,
+                "traceback": traceback
+            }
+            
+            # 获取日志（从UI日志中）
+            logs = []
+            try:
+                log_widget = getattr(self, "log", None)
+                if log_widget:
+                    log_content = log_widget.get("1.0", tk.END)
+                    logs = log_content.split("\n")
+                    self.append_log(f"[运维Agent] 已获取 {len(logs)} 行日志用于分析")
+            except Exception as log_e:
+                self.append_log(f"[运维Agent] 获取日志失败: {log_e}")
+            
+            # 调用运维Agent
+            self.append_log("[运维Agent] 开始分析错误...")
+            md_path = self.ops_agent.monitor_task_completion(
+                link=link,
+                task_id=task_id,
+                status="failed",
+                logs=logs,
+                error_info=error_info
+            )
+            
+            if md_path:
+                self.append_log(f"[运维Agent] ✓ 分析完成，维护建议已保存: {md_path}")
+                self.append_log(f"[运维Agent] 请查看维护文件了解修复建议")
+            else:
+                self.append_log("[运维Agent] ✓ 分析完成，无需生成维护建议")
+                
+        except Exception as ops_e:
+            self.append_log(f"[运维Agent] ✗ 调用失败: {ops_e}")
+            import traceback
+            self.append_log(f"[运维Agent] 错误详情: {traceback.format_exc()}")
 
     # 抖音视频专用下载方法
     def download_douyin_video(self, link: str):
@@ -5187,11 +6039,99 @@ class App:
             self.append_log(f"同步下载异常：{e}", "ERROR")
             return None
 
-    # 步骤3：语音转文字
+    def _effective_whisper_pool_size(self) -> int:
+        raw = os.environ.get("WHISPER_POOL_SIZE", "").strip()
+        if raw.isdigit():
+            n = int(raw)
+        else:
+            n = min(4, max(1, self.max_workers))
+        return max(1, min(n, 8))
+
+    def _ensure_whisper_pool(self) -> None:
+        """懒加载：创建 N 份独立的 Whisper 模型，放入 Queue；转写时 get/put 实现借还，支持真并行。"""
+        with self._whisper_pool_init_lock:
+            if self._whisper_pool_queue is not None:
+                return
+            import whisper
+
+            n = self._effective_whisper_pool_size()
+            self.append_log(
+                f"初始化 Whisper 实例池：{n} 路独立模型（环境变量 WHISPER_POOL_SIZE 可改；默认与线程池协调）",
+                "INFO",
+            )
+            q: queue.Queue = queue.Queue(maxsize=n)
+            name = self._whisper_pool_model_name
+            for i in range(n):
+                self.append_log(f"Whisper 池加载 {i + 1}/{n}（{name}）...", "INFO")
+                try:
+                    m = whisper.load_model(name)
+                except Exception as e:
+                    self.append_log(f"加载 {name} 失败，回退 small：{e}", "WARNING")
+                    name = "small"
+                    self._whisper_pool_model_name = "small"
+                    m = whisper.load_model("small")
+                q.put((f"w{i}", m))
+            self._whisper_pool_queue = q
+            with self.model_cache_lock:
+                self.model_cache = None
+
+    def _acquire_whisper_pool_slot(self, timeout: float = 7200.0):
+        self._ensure_whisper_pool()
+        return self._whisper_pool_queue.get(timeout=timeout)
+
+    def _release_whisper_pool_slot(self, slot) -> None:
+        if self._whisper_pool_queue is not None:
+            self._whisper_pool_queue.put_nowait(slot)
+
+    def _audio_duration_probe_sec(self, media_path: str):
+        """ffprobe 检测首条音轨时长；无音轨返回 0.0；失败返回 None。"""
+        import subprocess
+        import shutil
+
+        if not shutil.which("ffprobe"):
+            return None
+        try:
+            r = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "a:0",
+                    "-show_entries",
+                    "stream=duration",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                    media_path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            out = (r.stdout or "").strip()
+            if r.returncode != 0 or not out:
+                return 0.0
+            return float(out.split()[0])
+        except Exception:
+            return None
+
+    # 步骤 3：语音转文字
     def speech_to_text(self, video_file: str, user_prompt: str = ""):
         try:
             import time
             start_time = time.time()
+            
+            # 检查视频文件是否存在
+            if not os.path.exists(video_file):
+                self.append_log(f"视频文件不存在: {video_file}", "ERROR")
+                # 返回模拟数据
+                return {
+                    "segments": [
+                        {"start_time": 0, "text": "视频文件不存在，这是模拟数据。"},
+                        {"start_time": 10, "text": "请检查视频下载是否成功。"}
+                    ],
+                    "ai_summary": "视频文件不存在，无法转写。"
+                }
             
             # 检查视频文件大小
             file_size = os.path.getsize(video_file)
@@ -5209,146 +6149,134 @@ class App:
             
 
             
-            # 使用传统方法：Whisper 本地模型
+            # Whisper 实例池：多份独立模型 + Queue 借还，实现与线程池匹配的并行转写
             self.append_log("使用 Whisper 本地模型进行语音转文字...", "INFO")
-            
-            # 导入 whisper 库
-            import whisper
-            
-            # 加载 Whisper 模型（使用缓存的模型）
-            model_load_start = time.time()
-            self.append_log("加载 Whisper 模型...", "INFO")
-            self.update_progress(45, "加载语音转文字模型...")
-            
-            # 检查模型缓存（线程安全）
-            with self.model_cache_lock:
-                if self.model_cache is None:
-                    self.append_log("首次加载 Whisper 模型...", "INFO")
-                    # 使用 tiny 模型提高转写速度
-                    try:
-                        self.append_log("加载 Whisper tiny 模型（提高转写速度）...", "INFO")
-                        self.model_cache = whisper.load_model("tiny")
-                        self.append_log("Whisper tiny 模型加载完成并缓存", "INFO")
-                    except Exception as e:
-                        self.append_log(f"加载 tiny 模型失败：{e}", "WARNING")
-                        # 回退到 small 模型
-                        self.append_log("加载 Whisper small 模型作为回退...", "INFO")
-                        self.model_cache = whisper.load_model("small")
-                        self.append_log("Whisper small 模型加载完成并缓存", "INFO")
-                else:
-                    self.append_log("使用缓存的 Whisper 模型", "INFO")
-            
-            model_load_end = time.time()
-            self.append_log(f"模型加载耗时: {model_load_end - model_load_start:.2f}秒", "INFO")
-            
-            model = self.model_cache
-            self.update_progress(50, "模型加载完成，准备开始转写...")
-            
-            # 直接使用 Whisper 处理视频文件
-            self.append_log("开始转写...", "INFO")
-            self.update_progress(55, "正在分析视频音频...")
-            
-            # 为了显示进度，我们可以添加一些中间状态更新
-            import threading
-            
-            # 创建一个线程来定期更新进度
-            def progress_updater():
-                progress = 60
-                while not transcribe_done:
-                    if progress < 75:
-                        progress += 1
-                        self.update_progress(progress, f"正在转写音频... {progress-55}%")
-                    time.sleep(1)
-            
-            transcribe_done = False
-            progress_thread = threading.Thread(target=progress_updater)
-            progress_thread.daemon = True
-            progress_thread.start()
-            
-            try:
-                # 固定配置：使用简体中文，优化速度和准确率
-                self.append_log("使用优化参数进行转写...", "INFO")
-                transcribe_start = time.time()
-                result = model.transcribe(
-                    video_file, 
-                    language="zh",  # 固定为中文
-                    fp16=False,  # 禁用FP16，提高兼容性
-                    verbose=False,  # 禁用详细输出，提高速度
-                    task="transcribe",  # 明确指定任务为转写
-                    beam_size=1,  # 减小beam_size，显著提高速度
-                    temperature=0.0,  # 保持temperature=0.0，确保准确性
-                    best_of=1,  # 减小best_of，提高速度
-                    patience=0.0,  # 减小patience，提高速度
-                    initial_prompt="请使用标准简体中文进行转写，保持语句通顺，不要遗漏任何内容。",  # 固定使用简体中文提示词
-                    condition_on_previous_text=False,  # 禁用上下文依赖，提高速度
-                    compression_ratio_threshold=2.4  # 设置压缩比阈值，过滤低质量转写
+
+            import shutil
+
+            _fb = resolve_ffmpeg_bin_dir()
+            if _fb:
+                os.environ["PATH"] = _fb + os.pathsep + os.environ.get("PATH", "")
+            if not shutil.which("ffmpeg"):
+                self.append_log("警告：未找到 ffmpeg，Whisper 可能无法处理视频文件", "WARNING")
+
+            dur = self._audio_duration_probe_sec(video_file)
+            if dur is not None and dur < 0.05:
+                self.append_log(
+                    f"ffprobe：无有效音轨或时长过短（{dur}s），跳过转写以避免 reshape 错误", "ERROR"
                 )
-                
-                transcribe_end = time.time()
-                self.append_log(f"转写耗时: {transcribe_end - transcribe_start:.2f}秒", "INFO")
-                
+                return None
+
+            max_retries = max(1, int(os.environ.get("WHISPER_TRANSCRIBE_RETRIES", "3")))
+            base_delay = float(os.environ.get("WHISPER_RETRY_DELAY_SEC", "2"))
+
+            slot = None
+            transcribe_done = False
+            try:
+                slot = self._acquire_whisper_pool_slot()
+                slot_id, model = slot
+                self.append_log(
+                    f"从 Whisper 池取得槽位 {slot_id}（池大小={self._effective_whisper_pool_size()}，可并行）",
+                    "INFO",
+                )
+                self.update_progress(45, "加载语音转文字模型...")
+                self.update_progress(55, "正在分析视频音频...")
+                self.append_log("开始转写...", "INFO")
+
+                def progress_updater():
+                    progress = 60
+                    while not transcribe_done:
+                        if progress < 75:
+                            progress += 1
+                            self.update_progress(progress, f"正在转写音频... {progress - 55}%")
+                        time.sleep(1)
+
+                threading.Thread(target=progress_updater, daemon=True).start()
+
+                result = None
+                last_exc = None
+                for attempt in range(max_retries):
+                    try:
+                        self.append_log(
+                            f"使用优化参数进行转写…（尝试 {attempt + 1}/{max_retries}）", "INFO"
+                        )
+                        t0 = time.time()
+                        result = model.transcribe(
+                            video_file,
+                            language="zh",
+                            fp16=False,
+                            verbose=False,
+                            task="transcribe",
+                            beam_size=1,
+                            temperature=0.0,
+                            best_of=1,
+                            patience=0.0,
+                            initial_prompt="请使用标准简体中文进行转写，保持语句通顺，不要遗漏任何内容。",
+                            condition_on_previous_text=False,
+                            compression_ratio_threshold=2.4,
+                        )
+                        self.append_log(f"转写耗时: {time.time() - t0:.2f}秒", "INFO")
+                        last_exc = None
+                        break
+                    except RuntimeError as e:
+                        last_exc = e
+                        es = str(e)
+                        recoverable = "cannot reshape tensor" in es or "0 elements" in es
+                        if recoverable and attempt < max_retries - 1:
+                            delay = base_delay * (2**attempt)
+                            self.append_log(
+                                f"Whisper 转写异常，{delay:.0f}s 后重试（隔时重试 {attempt + 1}/{max_retries}）：{e}",
+                                "ERROR",
+                            )
+                            time.sleep(delay)
+                        else:
+                            raise
                 transcribe_done = True
+
+                if result is None:
+                    self.append_log(f"Whisper 转写失败（已重试 {max_retries} 次）: {last_exc}", "ERROR")
+                    return None
+
                 self.update_progress(75, "转写完成，正在处理结果...")
-                
-                # 获取转写结果
                 text = result["text"]
                 segments = []
                 for seg in result["segments"]:
-                    segments.append({
-                        "start_time": seg["start"],
-                        "text": seg["text"].strip()
-                    })
-                
+                    segments.append({"start_time": seg["start"], "text": seg["text"].strip()})
                 self.append_log("语音转文字完成！", "INFO")
                 self.append_log(f"转写结果: {text[:100]}...", "INFO")
-                
-                # 使用火山引擎API进行文本总结
+
                 self.update_progress(80, "使用AI进行文本总结...")
                 self.append_log("使用火山引擎API进行文本总结...", "INFO")
                 summary = self.summarize_with_volcengine(text, user_prompt)
-                
                 self.update_progress(85, "总结完成，准备生成文档...")
-                
+
                 if summary:
                     self.append_log("文本总结成功", "INFO")
-                    return {
-                        "segments": segments,
-                        "ai_summary": summary
-                    }
-                else:
-                    # 总结失败，使用转写文本的前100个字符作为摘要
-                    return {
-                        "segments": segments,
-                        "ai_summary": text[:100] + "...（省略部分内容）"
-                    }
-            except RuntimeError as e:
-                # 处理Whisper模型的RuntimeError，特别是张量形状错误
-                if "cannot reshape tensor" in str(e) or "0 elements" in str(e):
-                    self.append_log(f"Whisper模型无法处理此文件（可能是示例文件或无音频数据）：{e}", "WARNING")
-                    transcribe_done = True
-                    # 返回模拟数据
-                    return {
-                        "segments": [
-                            {"start_time": 0, "text": "这是一段模拟的视频转文字结果。"},
-                            {"start_time": 10, "text": "视频内容包括产品介绍、使用方法和注意事项。"},
-                            {"start_time": 20, "text": "这是一个示例文本，用于演示语音转文字功能。"}
-                        ],
-                        "ai_summary": "视频主要介绍了产品的基本信息、使用步骤和注意事项，帮助用户快速了解产品的核心功能和使用方法。"
-                    }
-                else:
-                    # 其他RuntimeError，继续抛出
-                    raise
+                    return {"segments": segments, "ai_summary": summary}
+                return {
+                    "segments": segments,
+                    "ai_summary": text[:100] + "...（省略部分内容）",
+                }
+            except queue.Empty:
+                self.append_log("等待 Whisper 实例池槽位超时", "ERROR")
+                return None
+            except FileNotFoundError as e:
+                self.append_log(
+                    "语音转文字失败：找不到 ffmpeg/ffprobe 或临时文件，请检查 PATH", "ERROR"
+                )
+                self.append_log(f"错误详情：{e}", "ERROR")
+                return None
+            finally:
+                transcribe_done = True
+                if slot is not None:
+                    try:
+                        self._release_whisper_pool_slot(slot)
+                    except Exception:
+                        pass
+
         except Exception as e:
             self.append_log(f"语音转文字异常：{type(e).__name__}: {e}", "ERROR")
-            # 使用模拟数据作为最后的备用方案
-            return {
-                "segments": [
-                    {"start_time": 0, "text": "这是一段模拟的视频转文字结果。"},
-                    {"start_time": 10, "text": "视频内容包括产品介绍、使用方法和注意事项。"},
-                    {"start_time": 20, "text": "这是一个示例文本，用于演示语音转文字功能。"}
-                ],
-                "ai_summary": "视频主要介绍了产品的基本信息、使用步骤和注意事项，帮助用户快速了解产品的核心功能和使用方法。"
-            }
+            return None
     
     # 使用火山引擎 API 进行文本总结（已停用，改用本地处理）
     def summarize_with_volcengine(self, text: str, user_prompt: str = ""):
@@ -5392,85 +6320,61 @@ class App:
                     "content": user_prompt
                 })
             
-            # 发送请求（移除重试机制，提高速度）
-            # 重试机制 - 主用 Doubao-Seed-2.0-lite，备用 DeepSeek-V3
+            # 主接入点 + 备用接入点（均为 Doubao-Seed-2.0-mini）
+            primary = CONFIG.get("ai_chat_model", AI_CHAT_MODEL)
+            backup = CONFIG.get("ai_chat_model_backup", AI_CHAT_MODEL_BACKUP)
+            client = Ark(
+                base_url=AI_CHAT_API_URL,
+                api_key=AI_CHAT_API_KEY,
+                timeout=60.0,
+            )
             max_retries = 3
             for attempt in range(max_retries):
-                try:
-                    self.append_log(f"调用火山引擎API进行总结... (尝试 {attempt + 1}/{max_retries})", "INFO")
-                    
-                    # 创建Ark客户端（带超时设置）
-                    client = Ark(
-                        base_url=AI_CHAT_API_URL,  # 使用AI对话的API配置
-                        api_key=AI_CHAT_API_KEY,
-                        timeout=60.0,  # 60秒超时
-                    )
-                    
-                    # 发送请求 - 主用 Doubao-Seed-2.0-lite 模型
-                    response = client.chat.completions.create(
-                        model=AI_CHAT_MODEL,  # ep-20260217011531-7vs6q - Doubao-Seed-2.0-lite
-                        messages=messages,
-                        timeout=60.0,  # 60秒超时
-                    )
-                    
-                    # 解析响应
-                    if response.choices and len(response.choices) > 0:
-                        summary = response.choices[0].message.content
-                        if summary:
-                            self.append_log("火山引擎API调用成功", "INFO")
-                            return summary
-                    
-                    self.append_log("火山引擎API返回空结果或格式不正确", "ERROR")
-                    return None
-                    
-                except Exception as e:
-                    error_msg = str(e)
-                    error_type = type(e).__name__
-                    self.append_log(f"火山引擎 API 调用异常（尝试 {attempt + 1}/{max_retries}）：[{error_type}] {error_msg}", "ERROR")
-                    
-                    # 诊断连接错误
-                    if "Connection" in error_msg or "connection" in error_msg:
-                        self.append_log("诊断：网络连接失败，可能原因：", "ERROR")
-                        self.append_log("  1. 网络不稳定或防火墙拦截", "ERROR")
-                        self.append_log("  2. 火山引擎服务器暂时不可用", "ERROR")
-                        self.append_log("  3. API 接入点 ID 不正确或已失效", "ERROR")
-                        self.append_log(f"  当前主用接入点: {AI_CHAT_MODEL} (Doubao-Seed-2.0-lite)", "ERROR")
-                        self.append_log(f"  备用接入点: ep-20260317000232-vfdvn (DeepSeek-V3)", "ERROR")
-                        
-                        # 最后一次重试时，切换到备用模型 DeepSeek-V3
-                        if attempt == max_retries - 1:
-                            self.append_log("⚠ Doubao-Seed-2.0-lite 连接失败，尝试使用备用模型 DeepSeek-V3...", "WARNING")
-                            try:
-                                # 使用备用模型 DeepSeek-V3
-                                backup_client = Ark(
-                                    base_url=VOLCENGINE_API_URL,
-                                    api_key=VOLCENGINE_API_KEY,
-                                    timeout=30.0,
-                                )
-                                response = backup_client.chat.completions.create(
-                                    model="ep-20260317000232-vfdvn",  # DeepSeek-V3 备用
-                                    messages=messages,
-                                    timeout=30.0,
-                                )
-                                if response.choices and len(response.choices) > 0:
-                                    summary = response.choices[0].message.content
-                                    if summary:
-                                        self.append_log("✓ 备用模型 DeepSeek-V3 调用成功", "INFO")
-                                        return summary
-                            except Exception as backup_e:
-                                self.append_log(f"备用模型 DeepSeek-V3 也失败：{backup_e}", "ERROR")
-                        
-                        if attempt < max_retries - 1:
-                            import time
-                            wait_time = 2 ** attempt
-                            self.append_log(f"连接错误，{wait_time}秒后重试...", "INFO")
-                            time.sleep(wait_time)
-                            continue
-                    
-                    # 其他错误或最后一次重试失败
-                    if attempt == max_retries - 1:
-                        return None
-            
+                self.append_log(f"调用火山引擎API进行总结... (尝试 {attempt + 1}/{max_retries})", "INFO")
+                last_err = None
+                primary_failed_detail = None
+                _tried = set()
+                for mid, label in ((primary, "主"), (backup, "备")):
+                    if not mid or mid in _tried:
+                        continue
+                    _tried.add(mid)
+                    try:
+                        self.append_log(f"  使用{label}接入点: {mid}", "INFO")
+                        response = client.chat.completions.create(
+                            model=mid,
+                            messages=messages,
+                            timeout=60.0,
+                        )
+                        if response.choices and len(response.choices) > 0:
+                            summary = response.choices[0].message.content
+                            if summary:
+                                self.append_log(f"火山引擎API调用成功（{label}接入点）", "INFO")
+                                if label == "备" and primary_failed_detail is not None:
+                                    threading.Thread(
+                                        target=self._schedule_ops_volcengine_degraded,
+                                        args=(primary_failed_detail, primary, mid),
+                                        daemon=True,
+                                    ).start()
+                                return summary
+                        self.append_log("火山引擎API返回空结果或格式不正确", "ERROR")
+                    except Exception as e:
+                        last_err = e
+                        et = type(e).__name__
+                        self.append_log(f"  [{label}] 接入点失败 [{et}]: {e}", "ERROR")
+                        if label == "主":
+                            primary_failed_detail = f"{et}: {e}"
+                if attempt < max_retries - 1:
+                    import time
+                    w = 2 ** attempt
+                    self.append_log(f"主备均失败，{w}秒后重试...", "WARNING")
+                    time.sleep(w)
+            if last_err:
+                self.append_log(f"火山引擎总结最终失败: {last_err}", "ERROR")
+                threading.Thread(
+                    target=self._ops_dispatch_log_incident,
+                    args=(f"火山引擎总结最终失败: {last_err}", "ERROR"),
+                    daemon=True,
+                ).start()
             return None
         except Exception as e:
             self.append_log(f"火山引擎 API 调用异常：{e}", "ERROR")
@@ -5525,6 +6429,8 @@ class App:
             if md_file:
                 self.append_log(f"✓ Markdown 文档生成成功：{md_file}")
                 self.update_task_status(link, "generate_md", "completed", md_file)
+                # 与主流程一致：小红书下载视频后走本函数，此前未调用飞书上传
+                self._run_feishu_upload_if_enabled(link, md_file, user_prompt, feishu_folder_path)
                 self.update_progress(100, "处理完成！")
             else:
                 self.append_log("Markdown 文档生成失败")
@@ -5693,7 +6599,8 @@ class App:
         """打开AI Prompt配置窗口"""
         ai_config_window = tk.Toplevel(self.root)
         ai_config_window.title("AI配置 - 视频转文字处理工具")
-        ai_config_window.geometry("1000x600")
+        ai_config_window.geometry("1000x780")
+        ai_config_window.minsize(720, 480)
         ai_config_window.resizable(True, True)
         ai_config_window.configure(bg="#f0f4f8")
         
@@ -5725,12 +6632,43 @@ class App:
             foreground="#0066cc"
         )
         
-        # 主容器 - 改进的滚动实现
+        # 顶部工具栏：保存/取消必须在建表单前就占位，否则部分环境下顶栏高度为 0 看不到按钮
+        top_bar = tk.Frame(ai_config_window, bg="#dde8f5")
+        top_bar.configure(highlightbackground="#0066cc", highlightthickness=1)
+        _save_action_holder: list = [lambda: None]
+
+        def _invoke_save_action():
+            fn = _save_action_holder[0]
+            if callable(fn):
+                fn()
+
+        top_inner = tk.Frame(top_bar, bg="#dde8f5")
+        top_inner.pack(fill=tk.X, padx=10, pady=8)
+        tk.Label(
+            top_inner,
+            text="修改后请点击「保存配置」",
+            font=("微软雅黑", 10, "bold"),
+            fg="#0066cc",
+            bg="#dde8f5",
+        ).pack(side=tk.LEFT)
+        ttk.Button(top_inner, text="取消", command=ai_config_window.destroy).pack(side=tk.RIGHT, padx=(6, 0))
+        ttk.Button(top_inner, text="保存配置", command=_invoke_save_action).pack(side=tk.RIGHT, padx=(6, 0))
+        
+        # 底部固定栏（说明 + 保存/取消）
+        bottom_bar = tk.Frame(ai_config_window, bg="#e8eef5")
+        bottom_bar.configure(highlightbackground="#0066cc", highlightthickness=1)
+        
+        # 主容器 - 可滚动区域
         main_frame = tk.Frame(ai_config_window, bg="#f0f4f8")
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        ai_config_window.grid_columnconfigure(0, weight=1)
+        ai_config_window.grid_rowconfigure(1, weight=1)
+        ai_config_window.grid_rowconfigure(0, minsize=52)
+        top_bar.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
+        main_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=(4, 0))
+        bottom_bar.grid(row=2, column=0, sticky="ew")
         
         # 画布和滚动条
-        canvas = tk.Canvas(main_frame, bg="#f0f4f8")
+        canvas = tk.Canvas(main_frame, bg="#f0f4f8", highlightthickness=0)
         scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
         scrollbar.pack(side="right", fill="y")
         canvas.pack(side="left", fill=tk.BOTH, expand=True)
@@ -5738,13 +6676,23 @@ class App:
         
         # 内容容器
         main_container = tk.Frame(canvas, bg="#f0f4f8")
-        canvas.create_window((0, 0), window=main_container, anchor="nw", width=960)
+        _cfg_win_id = canvas.create_window((0, 0), window=main_container, anchor="nw", width=960)
         
-        # 配置滚动区域
-        def on_configure(event):
+        def on_main_container_configure(event):
             canvas.configure(scrollregion=canvas.bbox("all"))
         
-        main_container.bind("<Configure>", on_configure)
+        main_container.bind("<Configure>", on_main_container_configure)
+        
+        def on_canvas_configure(event):
+            try:
+                sw = scrollbar.winfo_width() or 20
+                w = max(int(event.width) - sw - 4, 240)
+                canvas.itemconfigure(_cfg_win_id, width=w)
+            except tk.TclError:
+                pass
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        
+        canvas.bind("<Configure>", on_canvas_configure)
         
         # 添加鼠标滚轮支持
         def on_mouse_wheel(event):
@@ -5965,6 +6913,66 @@ class App:
         output_template_text.pack(fill=tk.X, padx=15, pady=(0, 15))
         output_template_text.insert(tk.END, CONFIG.get("output_template", DEFAULT_CONFIG["output_template"]))
         
+        # 飞书：应用凭证与默认目录（开关与单次路径覆盖在主界面）
+        feishu_cfg_frame = tk.Frame(main_container, bg="#ffffff", bd=0, relief=tk.RAISED)
+        feishu_cfg_frame.pack(fill=tk.X, pady=(0, 15))
+        feishu_cfg_frame.configure(bg="#ffffff", highlightbackground="#0066cc", highlightthickness=1, borderwidth=0)
+        
+        feishu_head = tk.Frame(feishu_cfg_frame, bg="#ffffff")
+        feishu_head.pack(fill=tk.X, padx=15, pady=(15, 8))
+        tk.Label(
+            feishu_head,
+            text="飞书同步",
+            font=("微软雅黑", 12, "bold"),
+            fg="#0066cc",
+            bg="#ffffff",
+        ).pack(side=tk.LEFT)
+        tk.Label(
+            feishu_head,
+            text="填写后用于上传 MD；是否实际上传由主界面「同步到飞书」勾选及任务级设置决定",
+            font=("微软雅黑", 9),
+            fg="#666",
+            bg="#ffffff",
+        ).pack(side=tk.LEFT, padx=10)
+        
+        feishu_app_id_var = tk.StringVar(value=CONFIG.get("feishu_app_id", "") or "")
+        feishu_app_secret_var = tk.StringVar(value=CONFIG.get("feishu_app_secret", "") or "")
+        feishu_default_folder_var = tk.StringVar(value=CONFIG.get("feishu_default_folder_path", "") or "")
+        feishu_folder_token_var = tk.StringVar(value=CONFIG.get("feishu_folder_token", "") or "")
+        
+        tk.Label(feishu_cfg_frame, text="飞书应用 App ID：", font=("微软雅黑", 10), bg="#ffffff", fg="#333").pack(anchor=tk.W, padx=15)
+        ttk.Entry(feishu_cfg_frame, textvariable=feishu_app_id_var, width=80).pack(fill=tk.X, padx=15, pady=(2, 8))
+        tk.Label(feishu_cfg_frame, text="飞书应用 App Secret：", font=("微软雅黑", 10), bg="#ffffff", fg="#333").pack(anchor=tk.W, padx=15)
+        ttk.Entry(feishu_cfg_frame, textvariable=feishu_app_secret_var, show="*", width=80).pack(fill=tk.X, padx=15, pady=(2, 8))
+        tk.Label(feishu_cfg_frame, text="云空间文件夹 Token 或 URL（fldcn… 或 …/drive/folder/fldcn…，上传必填）：", font=("微软雅黑", 10), bg="#ffffff", fg="#333").pack(anchor=tk.W, padx=15)
+        ttk.Entry(feishu_cfg_frame, textvariable=feishu_folder_token_var, width=80).pack(fill=tk.X, padx=15, pady=(2, 8))
+        tk.Label(feishu_cfg_frame, text="默认展示用路径（如 就业知识库/就业技术文档集/AI相关，便于识别；API 落点以上一项为准）：", font=("微软雅黑", 10), bg="#ffffff", fg="#333").pack(anchor=tk.W, padx=15)
+        ttk.Entry(feishu_cfg_frame, textvariable=feishu_default_folder_var, width=80).pack(fill=tk.X, padx=15, pady=(2, 8))
+
+        feishu_wiki_sync_var = tk.BooleanVar(value=bool(CONFIG.get("feishu_wiki_sync_enabled", False)))
+        feishu_wiki_space_name_var = tk.StringVar(value=CONFIG.get("feishu_wiki_space_name", "") or "")
+        feishu_wiki_space_id_var = tk.StringVar(value=CONFIG.get("feishu_wiki_space_id", "") or "")
+        feishu_wiki_anchor_var = tk.StringVar(value=CONFIG.get("feishu_wiki_anchor_node_token", "") or "")
+        feishu_wiki_path_var = tk.StringVar(value=CONFIG.get("feishu_wiki_path_ensure", "") or "")
+        tk.Checkbutton(
+            feishu_cfg_frame,
+            text="导入后将云文档迁入知识库（下方路径；无 API 文件夹时用空白云文档作目录占位）",
+            variable=feishu_wiki_sync_var,
+            font=("微软雅黑", 10),
+            bg="#ffffff",
+            activebackground="#ffffff",
+            fg="#333",
+            highlightthickness=0,
+        ).pack(anchor=tk.W, padx=15, pady=(4, 4))
+        tk.Label(feishu_cfg_frame, text="知识空间名称（与列表中名称匹配，含即可；可留空若填了下方空间 ID）：", font=("微软雅黑", 10), bg="#ffffff", fg="#333").pack(anchor=tk.W, padx=15)
+        ttk.Entry(feishu_cfg_frame, textvariable=feishu_wiki_space_name_var, width=80).pack(fill=tk.X, padx=15, pady=(2, 4))
+        tk.Label(feishu_cfg_frame, text="知识空间 space_id（可选，填写则不再按名称查找）：", font=("微软雅黑", 10), bg="#ffffff", fg="#333").pack(anchor=tk.W, padx=15)
+        ttk.Entry(feishu_cfg_frame, textvariable=feishu_wiki_space_id_var, width=80).pack(fill=tk.X, padx=15, pady=(2, 4))
+        tk.Label(feishu_cfg_frame, text="锚点 wiki 节点 token（可选，…/wiki/ 后一段；填则路径建在该节点之下）：", font=("微软雅黑", 10), bg="#ffffff", fg="#333").pack(anchor=tk.W, padx=15)
+        ttk.Entry(feishu_cfg_frame, textvariable=feishu_wiki_anchor_var, width=80).pack(fill=tk.X, padx=15, pady=(2, 4))
+        tk.Label(feishu_cfg_frame, text="知识库内路径（用 / 分隔，不存在则自动建空文档页作目录）：", font=("微软雅黑", 10), bg="#ffffff", fg="#333").pack(anchor=tk.W, padx=15)
+        ttk.Entry(feishu_cfg_frame, textvariable=feishu_wiki_path_var, width=80).pack(fill=tk.X, padx=15, pady=(2, 12))
+        
         # User Prompt 配置
         user_prompt_frame = tk.Frame(main_container, bg="#ffffff", bd=0, relief=tk.RAISED)
         user_prompt_frame.pack(fill=tk.X, pady=(0, 15))
@@ -6002,11 +7010,6 @@ class App:
         user_prompt_text.pack(fill=tk.X, padx=15, pady=(0, 15))
         user_prompt_text.insert(tk.END, CONFIG.get("user_prompt", DEFAULT_CONFIG["user_prompt"]))
         
-        # 按钮框架
-        button_frame = tk.Frame(main_container, bg="#f0f4f8")
-        button_frame.pack(fill=tk.X, pady=20)
-        
-        # 保存按钮
         def save_ai_config_changes():
             global CONFIG
             new_system_prompt = system_prompt_text.get(1.0, tk.END).strip()
@@ -6019,19 +7022,43 @@ class App:
             new_config["rules"] = new_rules
             new_config["output_template"] = new_output_template
             new_config["user_prompt"] = new_user_prompt
+            new_config["feishu_app_id"] = feishu_app_id_var.get().strip()
+            new_config["feishu_app_secret"] = feishu_app_secret_var.get().strip()
+            new_config["feishu_folder_token"] = feishu_folder_token_var.get().strip()
+            new_config["feishu_default_folder_path"] = feishu_default_folder_var.get().strip()
+            new_config["feishu_wiki_sync_enabled"] = bool(feishu_wiki_sync_var.get())
+            new_config["feishu_wiki_space_name"] = feishu_wiki_space_name_var.get().strip()
+            new_config["feishu_wiki_space_id"] = feishu_wiki_space_id_var.get().strip()
+            new_config["feishu_wiki_anchor_node_token"] = feishu_wiki_anchor_var.get().strip()
+            new_config["feishu_wiki_path_ensure"] = feishu_wiki_path_var.get().strip()
             
             if save_config(new_config):
                 CONFIG = new_config
-                messagebox.showinfo("成功", "AI配置已保存")
+                messagebox.showinfo("成功", "AI配置已保存（config.json；已连接 MariaDB 时同步 video_agent_config）")
                 ai_config_window.destroy()
             else:
                 messagebox.showerror("失败", "保存AI配置失败")
+
+        _save_action_holder[0] = save_ai_config_changes
         
-        save_btn = ttk.Button(button_frame, text="保存配置", command=save_ai_config_changes)
-        save_btn.pack(side=tk.RIGHT, padx=10)
+        tk.Label(
+            bottom_bar,
+            text=(
+                "保存：写入 config.json，并在 db 模块可用时同步到 MariaDB 表 video_agent_config（与项目 init_database / ai_api_config 一致）；"
+                "启动时库中有记录则覆盖 JSON 同名字段。飞书走开放平台 API。"
+            ),
+            font=("微软雅黑", 9),
+            fg="#444",
+            bg="#e8eef5",
+            justify=tk.LEFT,
+            wraplength=620,
+        ).pack(side=tk.LEFT, padx=12, pady=10, anchor=tk.W)
+        btn_wrap = tk.Frame(bottom_bar, bg="#e8eef5")
+        btn_wrap.pack(side=tk.RIGHT, padx=12, pady=8)
+        ttk.Button(btn_wrap, text="取消", command=ai_config_window.destroy).pack(side=tk.RIGHT, padx=(8, 0))
+        ttk.Button(btn_wrap, text="保存配置", command=_invoke_save_action).pack(side=tk.RIGHT, padx=(8, 0))
         
-        cancel_btn = ttk.Button(button_frame, text="取消", command=ai_config_window.destroy)
-        cancel_btn.pack(side=tk.RIGHT, padx=10)
+        ai_config_window.update_idletasks()
         
         # 居中显示
         ai_config_window.transient(self.root)
@@ -6039,10 +7066,33 @@ class App:
         self.root.wait_window(ai_config_window)
     
     # 打开AI API配置窗口（新的API配置界面）
+    def _apply_ai_api_runtime_config(self, main_config, backup_configs):
+        """将 API 窗口中的主/备配置写回 config.json，与 summarize/chat 使用同一数据源。"""
+        global CONFIG
+        CONFIG = {**CONFIG}
+        if main_config.get("api_key"):
+            CONFIG["volcengine_api_key"] = main_config["api_key"]
+        if main_config.get("endpoint_id"):
+            CONFIG["ai_chat_model"] = main_config["endpoint_id"]
+        if main_config.get("base_url"):
+            CONFIG["volcengine_base_url"] = main_config["base_url"]
+        if main_config.get("model"):
+            CONFIG["ai_chat_model_display_name"] = main_config["model"]
+        if backup_configs:
+            ep = (backup_configs[0] or {}).get("endpoint_id") or ""
+            if ep:
+                CONFIG["ai_chat_model_backup"] = ep
+        save_config(CONFIG)
+        self.append_log("已同步 AI API 到 config.json（主/备接入点与密钥）", "INFO")
+
     def open_ai_api_config_window(self):
         """打开AI API配置窗口（API Key、Model等）"""
         if AI_API_CONFIG_AVAILABLE:
-            open_ai_api_config_window(self.root)
+            open_ai_api_config_window(
+                self.root,
+                get_runtime_config=lambda: CONFIG.copy(),
+                on_save_runtime=self._apply_ai_api_runtime_config,
+            )
         else:
             messagebox.showwarning(
                 "模块未加载",
@@ -6119,7 +7169,12 @@ class App:
         
         ttk.Label(system_info_frame, text="系统信息：", font=("微软雅黑", 10, "bold"), background="#ffffff").pack(anchor=tk.W, padx=15, pady=(10, 5))
         
-        info_text = f"系统CPU核心数：{self.cpu_count}\n当前活跃线程数：{len(self.active_futures)}\n当前队列长度：{len(self.task_queue)}\n当前队列最大大小：{self.queue_max_size}"
+        info_text = (
+            f"系统CPU核心数：{self.cpu_count}\n"
+            f"当前执行中任务数：{len(self.active_futures)}\n"
+            f"待处理队列长度：{self._task_queue_len()}\n"
+            f"队列最大大小：{self.queue_max_size}"
+        )
         info_label = tk.Label(
             system_info_frame, 
             text=info_text, 
@@ -6265,25 +7320,20 @@ class App:
                 self.append_log(f"线程池已扩容至：{self.max_workers} 线程")
                 
                 # 扩容后，如果队列中有任务且未在处理中，继续处理
-                if self.task_queue and not self.processing_queue:
+                if self._task_queue_len() > 0 and not self.processing_queue:
                     self.append_log("线程池扩容完成，继续处理队列任务")
                     self.start_queue_processing()
             elif new_size < self.max_workers:
-                # 减少线程数
-                # 记录需要保留的活跃任务数量
-                tasks_to_keep = min(new_size, len(self.active_futures))
-                
-                # 取消多余的任务（FIFO原则，取消最早提交的任务）
-                tasks_to_cancel = self.active_futures[tasks_to_keep:]
+                # 减少线程数（active_futures 为 dict: link -> future）
+                pairs = list(self.active_futures.items())
+                keep = min(new_size, len(pairs))
                 cancelled_count = 0
-                for future in tasks_to_cancel:
+                for link, future in pairs[keep:]:
                     if not future.done():
                         future.cancel()
-                        self.append_log(f"已取消任务：{future}")
                         cancelled_count += 1
-                
-                # 更新活跃任务列表
-                self.active_futures = self.active_futures[:tasks_to_keep]
+                        self.append_log(f"已尝试取消任务：{str(link)[:70]}...")
+                    self.active_futures.pop(link, None)
                 
                 # 更新线程池大小
                 self.max_workers = new_size
@@ -6295,7 +7345,7 @@ class App:
                 
                 # 缩容后，无论是否正在处理中，都检查队列并继续处理
                 # 因为即使正在处理中，我们也需要确保新的线程池能够处理剩余任务
-                if self.task_queue:
+                if self._task_queue_len() > 0:
                     # 如果当前没有在处理中，直接开始处理
                     if not self.processing_queue:
                         self.append_log("线程池缩容完成，继续处理队列任务")
