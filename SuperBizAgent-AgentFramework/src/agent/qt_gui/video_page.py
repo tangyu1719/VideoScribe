@@ -95,7 +95,7 @@ class VideoProcessingPage(QWidget):
         btn_layout.setSpacing(10)
         
         # 主按钮
-        self.start_btn = QPushButton("▶ 开始处理")
+        self.start_btn = QPushButton("开始处理")
         self.start_btn.setObjectName("primaryButton")
         self.start_btn.setMinimumWidth(120)
         self.start_btn.setFixedHeight(40)
@@ -103,11 +103,11 @@ class VideoProcessingPage(QWidget):
         
         # 功能按钮
         buttons = [
-            ("⚙ AI 配置", "open_ai_config"),
-            ("🔑 API 设置", "open_api_config"),
-            ("📥 批量导入", "batch_import"),
-            ("📜 历史查询", "show_history"),
-            ("⚡ 线程配置", "open_thread_config"),
+            ("AI 配置", "open_ai_config"),
+            ("API 设置", "open_api_config"),
+            ("批量导入", "batch_import"),
+            ("历史查询", "show_history"),
+            ("线程配置", "open_thread_config"),
         ]
         
         for text, attr in buttons:

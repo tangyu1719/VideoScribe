@@ -71,7 +71,7 @@ class DocumentPage(QWidget):
         
         # 添加文件按钮
         btn_row = QHBoxLayout()
-        self.btn_add_files = QPushButton("📁 添加文件")
+        self.btn_add_files = QPushButton("添加文件")
         self.btn_add_files.setObjectName("primaryButton")
         self.btn_add_files.setFixedHeight(36)
         btn_row.addWidget(self.btn_add_files)
@@ -103,7 +103,7 @@ class DocumentPage(QWidget):
         # 按钮区域
         btn_layout = QHBoxLayout()
         
-        self.btn_start = QPushButton("▶ 开始处理")
+        self.btn_start = QPushButton("开始处理")
         self.btn_start.setObjectName("primaryButton")
         self.btn_start.setMinimumWidth(120)
         self.btn_start.setFixedHeight(40)

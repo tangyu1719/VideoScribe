@@ -48,7 +48,7 @@ class Theme:
         "spacing_xl": 20,
         
         # 字体
-        "font_family": "Microsoft YaHei, Segoe UI, sans-serif",
+        "font_family": "PingFang SC, Microsoft YaHei, sans-serif",
         "font_size_xs": 11,
         "font_size_sm": 12,
         "font_size_md": 13,
@@ -94,7 +94,7 @@ class Theme:
         "spacing_xl": 20,
         
         # 字体
-        "font_family": "Microsoft YaHei, Segoe UI, sans-serif",
+        "font_family": "PingFang SC, Microsoft YaHei, sans-serif",
         "font_size_xs": 11,
         "font_size_sm": 12,
         "font_size_md": 13,

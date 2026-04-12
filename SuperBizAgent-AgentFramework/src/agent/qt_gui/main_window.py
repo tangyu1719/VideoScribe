@@ -61,9 +61,9 @@ class NavigationBar(QFrame):
         
         # 添加导航项
         nav_items = [
-            ("🎬 视频处理", 0),
-            ("💬 AI 问答", 1),
-            ("📄 文档处理", 2),
+            ("视频处理", 0),
+            ("AI 问答", 1),
+            ("文档处理", 2),
         ]
         
         for text, index in nav_items:
@@ -78,13 +78,13 @@ class NavigationBar(QFrame):
         layout.addStretch()
         
         # 底部按钮
-        self.settings_btn = QPushButton("⚙ 设置")
+        self.settings_btn = QPushButton("设置")
         self.settings_btn.setObjectName("secondaryButton")
         self.settings_btn.setFixedHeight(36)
         self.settings_btn.clicked.connect(self._on_settings_clicked)
         layout.addWidget(self.settings_btn)
         
-        self.about_btn = QPushButton("ℹ 关于")
+        self.about_btn = QPushButton("关于")
         self.about_btn.setObjectName("secondaryButton")
         self.about_btn.setFixedHeight(36)
         layout.addWidget(self.about_btn)

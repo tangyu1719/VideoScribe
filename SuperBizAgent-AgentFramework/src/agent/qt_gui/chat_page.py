@@ -51,7 +51,7 @@ class ChatPage(QWidget):
         session_header.addStretch()
         
         # 新建会话按钮
-        self.btn_new_session = QPushButton("➕ 新建")
+        self.btn_new_session = QPushButton("新建")
         self.btn_new_session.setObjectName("secondaryButton")
         self.btn_new_session.setFixedHeight(32)
         session_header.addWidget(self.btn_new_session)
@@ -114,14 +114,14 @@ class ChatPage(QWidget):
         # 按钮区域
         btn_row = QHBoxLayout()
         
-        self.btn_upload = QPushButton("📎 上传文件")
+        self.btn_upload = QPushButton("上传文件")
         self.btn_upload.setObjectName("secondaryButton")
         self.btn_upload.setFixedHeight(36)
         btn_row.addWidget(self.btn_upload)
         
         btn_row.addStretch()
         
-        self.btn_send = QPushButton("发送 ➤")
+        self.btn_send = QPushButton("发送")
         self.btn_send.setObjectName("primaryButton")
         self.btn_send.setFixedHeight(36)
         self.btn_send.setFixedWidth(100)
