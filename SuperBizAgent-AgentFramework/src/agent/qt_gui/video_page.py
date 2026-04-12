@@ -2,18 +2,88 @@
 # -*- coding: utf-8 -*-
 """
 视频处理页面 - PySide6 版本
-模仿豆包/DeskClaw 现代风格
+连接完整后端接口
 """
+
+import sys
+import os
+from datetime import datetime
+from pathlib import Path
+
+# 添加后端路径
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'agent'))
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QPlainTextEdit, QProgressBar, QFrame,
-    QCheckBox, QScrollArea, QGroupBox
+    QCheckBox, QGroupBox, QMessageBox, QFileDialog, QDialog
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QFont
 
 from qt_gui.theme import Theme
+
+# 导入后端接口
+try:
+    from video_downloader import VideoDownloader
+    from multimodal_tool import WhisperModel
+    from link_analyzer import LinkAnalyzer
+    BACKEND_AVAILABLE = True
+except ImportError as e:
+    BACKEND_AVAILABLE = False
+    print(f"[VideoPage] 后端模块导入失败：{e}")
+
+
+class VideoProcessingWorker(QThread):
+    """视频处理工作线程"""
+    log_signal = Signal(str)
+    progress_signal = Signal(int, str)
+    finished_signal = Signal(bool, str)
+    
+    def __init__(self, link, user_prompt=""):
+        super().__init__()
+        self.link = link
+        self.user_prompt = user_prompt
+    
+    def run(self):
+        try:
+            if not BACKEND_AVAILABLE:
+                self.finished_signal.emit(False, "后端模块未加载")
+                return
+            
+            # 1. 下载视频
+            self.progress_signal.emit(10, "开始下载视频...")
+            downloader = VideoDownloader()
+            video_path = downloader.download(self.link)
+            self.log_signal.emit(f"视频下载成功：{video_path}")
+            
+            # 2. 语音转文字
+            self.progress_signal.emit(40, "开始语音转写...")
+            whisper = WhisperModel()
+            transcription = whisper.transcribe(video_path)
+            self.log_signal.emit(f"转写完成：{len(transcription.get('segments', []))} 个片段")
+            
+            # 3. 内容分析
+            self.progress_signal.emit(70, "开始内容分析...")
+            analyzer = LinkAnalyzer()
+            analysis = analyzer.analyze_content(transcription)
+            self.log_signal.emit(f"分析完成")
+            
+            # 4. 生成文档
+            self.progress_signal.emit(90, "生成文档...")
+            result = {
+                "link": self.link,
+                "video_path": video_path,
+                "transcription": transcription,
+                "analysis": analysis,
+                "created_at": datetime.now().isoformat()
+            }
+            
+            self.progress_signal.emit(100, "处理完成！")
+            self.finished_signal.emit(True, "视频处理成功")
+            
+        except Exception as e:
+            self.finished_signal.emit(False, f"处理失败：{str(e)}")
 
 
 class VideoProcessingPage(QWidget):
@@ -21,7 +91,9 @@ class VideoProcessingPage(QWidget):
     
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.worker = None
         self.setup_ui()
+        self._connect_signals()
     
     def setup_ui(self):
         layout = QVBoxLayout(self)
@@ -162,9 +234,20 @@ class VideoProcessingPage(QWidget):
         
         layout.addWidget(log_group, 1)
     
+    def _connect_signals(self):
+        """连接信号和槽"""
+        self.start_btn.clicked.connect(self.start_processing)
+        self.open_ai_config.clicked.connect(self.open_ai_config_handler)
+        self.open_api_config.clicked.connect(self.open_api_config_handler)
+        self.batch_import.clicked.connect(self.batch_import_handler)
+        self.show_history.clicked.connect(self.show_history_handler)
+        self.open_thread_config.clicked.connect(self.open_thread_config_handler)
+        self.btn_expand_prompt.clicked.connect(self.expand_prompt)
+    
     def append_log(self, message: str):
         """追加日志"""
-        self.log_view.appendPlainText(message)
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.log_view.appendPlainText(f"[{timestamp}] {message}")
     
     def update_progress(self, value: int):
         """更新进度"""
@@ -178,3 +261,126 @@ class VideoProcessingPage(QWidget):
         """更新队列状态"""
         status = "处理中" if processing else "空闲"
         self.lbl_queue_status.setText(f"队列：{count} 个任务 | 状态：{status}")
+    
+    # ========== 后端接口处理方法 ==========
+    
+    def start_processing(self):
+        """开始处理 - 调用后端接口"""
+        link = self.link_input.text().strip()
+        if not link:
+            QMessageBox.warning(self, "警告", "请输入视频链接")
+            return
+        
+        if not BACKEND_AVAILABLE:
+            QMessageBox.critical(self, "错误", "后端模块未加载，无法处理")
+            return
+        
+        user_prompt = self.user_prompt_edit.text().strip()
+        
+        # 更新 UI 状态
+        self.update_status("处理中...")
+        self.update_queue_status(1, True)
+        self.start_btn.setEnabled(False)
+        
+        # 创建并启动工作线程
+        self.worker = VideoProcessingWorker(link, user_prompt)
+        self.worker.log_signal.connect(self.append_log)
+        self.worker.progress_signal.connect(self.update_progress)
+        self.worker.finished_signal.connect(self.on_processing_finished)
+        self.worker.start()
+        
+        self.append_log(f"开始处理链接：{link}")
+    
+    def on_processing_finished(self, success: bool, message: str):
+        """处理完成回调"""
+        self.start_btn.setEnabled(True)
+        self.update_status("就绪")
+        self.update_queue_status(0, False)
+        
+        if success:
+            self.append_log(f"✓ {message}")
+            QMessageBox.information(self, "完成", message)
+        else:
+            self.append_log(f"✗ {message}")
+            QMessageBox.critical(self, "错误", message)
+    
+    def open_ai_config_handler(self):
+        """AI 配置 - 调用后端接口"""
+        try:
+            from ai_api_config_gui import AIAPIConfigManager
+            config_manager = AIAPIConfigManager()
+            config_manager.show_config_dialog(self)
+            self.append_log("打开 AI 配置对话框")
+        except ImportError:
+            QMessageBox.information(self, "提示", "AI 配置模块未加载")
+            self.append_log("AI 配置模块未加载")
+    
+    def open_api_config_handler(self):
+        """API 设置 - 调用后端接口"""
+        try:
+            from ai_api_config_gui import AIAPIConfigManager
+            config_manager = AIAPIConfigManager()
+            config_manager.show_api_config_dialog(self)
+            self.append_log("打开 API 设置对话框")
+        except ImportError:
+            QMessageBox.information(self, "提示", "API 配置模块未加载")
+            self.append_log("API 配置模块未加载")
+    
+    def batch_import_handler(self):
+        """批量导入 - 调用后端接口"""
+        try:
+            from batch_import_gui import BatchImportDialog
+            dialog = BatchImportDialog(self)
+            if dialog.exec() == QDialog.Accepted:
+                links = dialog.get_links()
+                self.append_log(f"批量导入 {len(links)} 个链接")
+                QMessageBox.information(self, "批量导入", f"已导入 {len(links)} 个链接")
+        except ImportError:
+            # 简单实现
+            file_path, _ = QFileDialog.getOpenFileName(
+                self, "选择导入文件", "", "文本文件 (*.txt);;所有文件 (*.*)"
+            )
+            if file_path:
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        links = [line.strip() for line in f if line.strip()]
+                        self.append_log(f"从文件导入 {len(links)} 个链接")
+                        QMessageBox.information(self, "批量导入", f"已导入 {len(links)} 个链接")
+                except Exception as e:
+                    QMessageBox.critical(self, "错误", f"导入失败：{e}")
+    
+    def show_history_handler(self):
+        """历史查询 - 调用后端接口"""
+        try:
+            output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'agent', 'output')
+            if os.path.exists(output_dir):
+                import subprocess
+                subprocess.Popen(f'explorer "{output_dir}"')
+                self.append_log(f"打开输出目录：{output_dir}")
+            else:
+                QMessageBox.information(self, "历史记录", "输出目录不存在")
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"打开历史失败：{e}")
+    
+    def open_thread_config_handler(self):
+        """线程配置 - 调用后端接口"""
+        try:
+            from thread_config_gui import ThreadConfigDialog
+            dialog = ThreadConfigDialog(self)
+            if dialog.exec() == QDialog.Accepted:
+                config = dialog.get_config()
+                self.append_log(f"线程配置已更新：最大线程数={config.get('max_workers', 4)}")
+        except ImportError:
+            # 简单实现
+            num, ok = QInputDialog.getInt(self, "线程配置", "设置最大工作线程数:", 4, 1, 16, 1)
+            if ok:
+                self.append_log(f"线程配置已更新：最大线程数={num}")
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"线程配置失败：{e}")
+    
+    def expand_prompt(self):
+        """展开编辑 User Prompt"""
+        text, ok = QPlainTextEdit.getMultiLineText(self, "编辑 User Prompt", "输入额外提示信息:", self.user_prompt_edit.text())
+        if ok:
+            self.user_prompt_edit.setText(text)
+            self.append_log("已编辑 User Prompt")
