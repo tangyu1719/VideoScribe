@@ -58,6 +58,17 @@ import asyncio
 import aiohttp
 
 # LangChain集成已移除
+try:
+    # Cursor 风格工具（Search / GitHub / Playwright / 读写编辑 / 终端 / 预览 / 联网搜索）
+    from cursor_tools.tools import (
+        build_cursor_like_tools,
+        plan_tool_calls_with_llm,
+        execute_tool_calls,
+        format_tool_results_for_context,
+    )
+    CURSOR_TOOLS_AVAILABLE = True
+except Exception:
+    CURSOR_TOOLS_AVAILABLE = False
 
 # RAG知识库集成 - 使用快速版kb_manager_fast（BGE-Large 1024维）
 try:
@@ -306,6 +317,7 @@ class DoubaoChatPage(tk.Frame):
         self.ai_config = self._load_ai_config()
         self._rag_kb = rag_kb  # 接收传入的RAG知识库
         self._rag_tool = rag_tool  # 接收传入的RAG工具
+        self._cursor_tools = build_cursor_like_tools(BASE_DIR) if CURSOR_TOOLS_AVAILABLE else []
 
         # 加载会话历史
         self._load_sessions()
@@ -1313,6 +1325,35 @@ class DoubaoChatPage(tk.Frame):
             self._log_to_file(traceback.format_exc())
             yield {"type": "error", "content": f"API调用失败: {str(e)}"}
 
+    def _call_ai_api_once(self, messages, temperature: float = 0.1, max_tokens: int = 900):
+        """非流式调用 Ark chat.completions，用于工具规划等小请求。"""
+        model = self.ai_config.get("model", AI_CHAT_MODEL)
+        api_key = self.ai_config.get("api_key", AI_CHAT_API_KEY)
+
+        from volcenginesdkarkruntime import Ark
+        client = Ark(base_url=AI_CHAT_API_URL, api_key=api_key)
+
+        backup_model = self.ai_config.get("model_backup", AI_CHAT_MODEL_BACKUP)
+        models_try = [model]
+        if backup_model and backup_model != model:
+            models_try.append(backup_model)
+
+        last_err = None
+        for use_model in models_try:
+            try:
+                resp = client.chat.completions.create(
+                    model=use_model,
+                    messages=messages,
+                    stream=False,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    top_p=self.ai_config.get("top_p", 0.9),
+                )
+                return (resp.choices[0].message.content or "").strip()
+            except Exception as e:
+                last_err = e
+        raise RuntimeError(f"non-stream call failed: {last_err}")
+
     def _save_context_to_json(self, messages):
         """保存上下文到JSON文件"""
         try:
@@ -1585,11 +1626,59 @@ class DoubaoChatPage(tk.Frame):
                     self.after(0, complete_reason_step)
                 
                 self._log_to_file(f"思考过程完成: {thinking_content[:100]}...")
+
+                # ========== Step 4.5: 工具调用（Cursor风格） ==========
+                tool_ctx = ""
+                tool_step = None
+                if CURSOR_TOOLS_AVAILABLE and self._cursor_tools:
+                    if REACT_CHAIN_AVAILABLE:
+                        def add_tool_step():
+                            nonlocal tool_step
+                            bubble_frame = self.messages_frame.winfo_children()[msg_index]
+                            if hasattr(bubble_frame, 'ai_content_frame'):
+                                ai_frame = bubble_frame.ai_content_frame
+                                if hasattr(ai_frame, 'thought_chain'):
+                                    tool_step = ai_frame.thought_chain.add_step(
+                                        "tools", "工具调用", "正在判断是否需要调用工具...", status="running"
+                                    )
+                        self.after(0, add_tool_step)
+
+                    try:
+                        def _llm_call(msgs):
+                            return self._call_ai_api_once(msgs, temperature=0.1, max_tokens=900)
+
+                        calls = plan_tool_calls_with_llm(
+                            llm_call=_llm_call,
+                            tools=self._cursor_tools,
+                            user_message=user_message,
+                            max_calls=3,
+                        )
+                        results = execute_tool_calls(self._cursor_tools, calls)
+                        tool_ctx = format_tool_results_for_context(results)
+
+                        if REACT_CHAIN_AVAILABLE and tool_step:
+                            def update_tool_step():
+                                if tool_step:
+                                    if results:
+                                        brief = "\n".join([f"- {r['name']}: {'OK' if r['ok'] else 'FAIL'}" for r in results])
+                                        tool_step.update_content(f"已执行工具：\n{brief}")
+                                    else:
+                                        tool_step.update_content("本轮无需调用工具。")
+                                    tool_step.update_status("completed")
+                            self.after(0, update_tool_step)
+                    except Exception as e:
+                        if REACT_CHAIN_AVAILABLE and tool_step:
+                            def update_tool_step_fail():
+                                if tool_step:
+                                    tool_step.update_content(f"工具调用失败：{type(e).__name__}: {e}")
+                                    tool_step.update_status("failed")
+                            self.after(0, update_tool_step_fail)
                 
                 # ========== Step 5: 生成回答 ==========
                 self._log_to_file("开始生成回答...")
-                
-                for chunk in self._call_ai_api_stream(user_message, is_thinking=False, rag_context=rag_context):
+
+                rag_context_final = rag_context + (tool_ctx or "")
+                for chunk in self._call_ai_api_stream(user_message, is_thinking=False, rag_context=rag_context_final):
                     if chunk["type"] == "content":
                         ai_msg["content"] += chunk["content"]
                         self.after(0, lambda t=ai_msg["content"]: self._stream_update_content(msg_index, t))
