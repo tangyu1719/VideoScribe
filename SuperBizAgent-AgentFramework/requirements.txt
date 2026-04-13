@@ -20,6 +20,7 @@ ffmpeg-python>=0.2.0
 
 # AI框架
 langchain>=0.1.0
+langchain-openai>=0.1.0
 
 # 火山引擎SDK
 volcengine-python-sdk[ark]>=1.0.0

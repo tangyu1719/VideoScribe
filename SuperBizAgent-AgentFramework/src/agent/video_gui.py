@@ -70,6 +70,12 @@ try:
 except Exception:
     CURSOR_TOOLS_AVAILABLE = False
 
+try:
+    from langchain_standard_runtime import StandardLangChainRuntime, LLMEndpointConfig
+    LANGCHAIN_STANDARD_AVAILABLE = True
+except Exception:
+    LANGCHAIN_STANDARD_AVAILABLE = False
+
 # RAG知识库集成 - 使用快速版kb_manager_fast（BGE-Large 1024维）
 try:
     from kb_manager_fast import get_fast_knowledge_base as get_knowledge_base
@@ -222,6 +228,10 @@ DEFAULT_CONFIG = {
     "feishu_wiki_space_id": "",
     "feishu_wiki_anchor_node_token": "",
     "feishu_wiki_path_ensure": "就业技术文档集/AI相关",
+    # 标准 LangChain 架构开关（模型+Agent+Memory+RAG Tool）
+    "langchain_standard_enabled": True,
+    "llm_provider": "ark",
+    "llm_base_url": AI_CHAT_API_URL,
 }
 
 for d in (VIDEO_DIR, OUTPUT_DIR):
@@ -318,6 +328,8 @@ class DoubaoChatPage(tk.Frame):
         self._rag_kb = rag_kb  # 接收传入的RAG知识库
         self._rag_tool = rag_tool  # 接收传入的RAG工具
         self._cursor_tools = build_cursor_like_tools(BASE_DIR) if CURSOR_TOOLS_AVAILABLE else []
+        self._standard_runtime = None
+        self._init_standard_langchain_runtime()
 
         # 加载会话历史
         self._load_sessions()
@@ -330,6 +342,38 @@ class DoubaoChatPage(tk.Frame):
             self._create_new_session()
         else:
             self._load_session(self.sessions[0]["id"])
+
+    def _init_standard_langchain_runtime(self):
+        """初始化标准 LangChain 运行时（可开关）。"""
+        try:
+            enabled = bool(CONFIG.get("langchain_standard_enabled", True))
+            if not enabled or not LANGCHAIN_STANDARD_AVAILABLE:
+                self._standard_runtime = None
+                return
+
+            cfg = LLMEndpointConfig(
+                provider=str(CONFIG.get("llm_provider", "ark")),
+                api_key=self.ai_config.get("api_key", AI_CHAT_API_KEY),
+                base_url=str(CONFIG.get("llm_base_url", AI_CHAT_API_URL)),
+                model=self.ai_config.get("model", AI_CHAT_MODEL),
+                temperature=float(self.ai_config.get("temperature", 0.7)),
+                max_tokens=int(self.ai_config.get("max_tokens", 4096)),
+            )
+
+            self._standard_runtime = StandardLangChainRuntime(
+                base_dir=BASE_DIR,
+                llm_config=cfg,
+                rag_tool=self._rag_tool,
+                rag_kb=self._rag_kb,
+                logger=self._log_to_file,
+            )
+            if self._standard_runtime and self._standard_runtime.ready:
+                self._log_to_file("标准 LangChain 运行时已启用")
+            else:
+                self._log_to_file("标准 LangChain 运行时不可用，继续使用旧链路")
+        except Exception as e:
+            self._standard_runtime = None
+            self._log_to_file(f"标准 LangChain 运行时初始化失败: {e}")
 
     def _load_ai_config(self):
         """加载AI配置"""
@@ -1678,13 +1722,23 @@ class DoubaoChatPage(tk.Frame):
                 self._log_to_file("开始生成回答...")
 
                 rag_context_final = rag_context + (tool_ctx or "")
-                for chunk in self._call_ai_api_stream(user_message, is_thinking=False, rag_context=rag_context_final):
-                    if chunk["type"] == "content":
-                        ai_msg["content"] += chunk["content"]
-                        self.after(0, lambda t=ai_msg["content"]: self._stream_update_content(msg_index, t))
-                    elif chunk["type"] == "error":
-                        ai_msg["content"] = chunk["content"]
-                        self.after(0, lambda t=ai_msg["content"]: self._stream_update_content(msg_index, t))
+                # 标准 LangChain 架构：模型+工具循环+memory 统一交给 AgentExecutor
+                if self._standard_runtime and self._standard_runtime.ready:
+                    augmented_input = user_message
+                    if rag_context_final:
+                        augmented_input += f"\n\n请参考上下文：\n{rag_context_final}"
+                    result = self._standard_runtime.invoke(augmented_input)
+                    ai_msg["content"] = result.get("output", "") if result.get("ok") else result.get("output", "标准运行时失败")
+                    self.after(0, lambda t=ai_msg["content"]: self._stream_update_content(msg_index, t))
+                else:
+                    # 兼容旧链路
+                    for chunk in self._call_ai_api_stream(user_message, is_thinking=False, rag_context=rag_context_final):
+                        if chunk["type"] == "content":
+                            ai_msg["content"] += chunk["content"]
+                            self.after(0, lambda t=ai_msg["content"]: self._stream_update_content(msg_index, t))
+                        elif chunk["type"] == "error":
+                            ai_msg["content"] = chunk["content"]
+                            self.after(0, lambda t=ai_msg["content"]: self._stream_update_content(msg_index, t))
 
                 # 保存会话
                 self.after(0, self._save_current_session)

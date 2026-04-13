@@ -1,0 +1,1002 @@
+（按部分来，尽量先把所有部分的题都做了 1 简单 +1 难题 每日）
+（尽量记一下代码，最后把前面的思路看一下，不行就 3-4 天复习一轮思路）
+
+一．基础函数
+Map--- .get()  getOrDefault(,0)   .put(,)   computIfAbsent(,)    .containsKey()  .keyset()  .valueset() 
+.entryset() entry.getkey() entry.getvalue()
+
+String---.length()(对比 int[] .length  .substring   .charAt()  .indexOf()  replace(,)
+.trim() (去除 str 首位空格)   .split()
+
+List--- add(下标)  remove()
+
+1.1 Map 核心方法
+方法	返回值	使用场景	示例	底层原理
+.get(key)	V	获取键对应值（键不存在返回 null）	map.get("id")	哈希表/红黑树查找
+.getOrDefault(key, defaultValue)	V	安全获取值（避免 NPE）	map.getOrDefault("count", 0)	先查找，不存在返回默认值
+.put(key, value)	V (旧值)	添加/更新键值对	map.put("name", "Alice")	哈希冲突时链表转红黑树（JDK8+）
+.computeIfAbsent(key, Function)	V	键不存在时计算并存入值	map.computeIfAbsent("id", k -> UUID.randomUUID())	原子操作避免竞态条件
+.containsKey(key)	boolean	检查键是否存在	if(map.containsKey(k))	哈希定位桶后遍历链表/树
+.keySet()	Set<K>	获取所有键的集合	for(String k : map.keySet())	返回哈希表键的视图
+.values()	Collection<V>	获取所有值的集合	map.values().stream()	返回值的视图（可能重复）
+.entrySet()	Set<Entry<K,V>>	获取键值对集合	for(Entry e : map.entrySet())	直接操作哈希桶数组
+entry.getKey()	K	获取 Entry 的键	e.getKey()	Entry 对象属性访问
+entry.getValue()	V	获取 Entry 的值	e.getValue()	Entry 对象属性访问
+.merge(key, value, BiFunction)	V	合并键的值	counts.merge("apple", 1, Integer::sum)	存在则应用函数，不存在则插入
+.putIfAbsent(key, value)	V (旧值或 null)	仅当键不存在时放入值	map.putIfAbsent("apple", 10)	先检查再插入，原子操作
+.compute(key, BiFunction)	V	计算新值并更新	map.compute("key", (k,v) -> v == null ? 1 : v+1)	根据旧值计算新值
+.computeIfPresent(key, BiFunction)	V	键存在时计算更新	map.computeIfPresent("key", (k,v) -> v+1)	仅当键存在时应用函数
+.replaceAll(BiFunction)	void	批量替换所有值	map.replaceAll((k,v) -> v.toUpperCase())	遍历所有 entry 应用函数
+.remove(key)	V (被删值)	删除键值对	map.remove("key")	哈希定位后删除节点
+.clear()	void	清空 Map	map.clear()	置 size=0，释放引用
+
+📌 HashMap 特有方法：
+.initialCapacity()	构造参数	指定初始容量	new HashMap<>(16)	设置桶数组大小
+.loadFactor()	构造参数	指定负载因子	new HashMap<>(16, 0.75f)	扩容阈值因子
+.size()	int	获取键值对数量	map.size()	返回 size 字段
+.isEmpty()	boolean	判断是否为空	map.isEmpty()	size == 0 检查
+
+📌 TreeMap 特有方法（按顺序访问）：
+.firstKey()	K	获取第一个（最小）键	treeMap.firstKey()	红黑树最左节点
+.lastKey()	K	获取最后一个（最大）键	treeMap.lastKey()	红黑树最右节点
+.lowerKey(K key)	K	获取严格小于 key 的最小键	treeMap.lowerKey("c")	红黑树查找
+.higherKey(K key)	K	获取严格大于 key 的最小键	treeMap.higherKey("c")	红黑树查找
+.floorKey(K key)	K	获取小于等于 key 的最大键	treeMap.floorKey("c")	红黑树查找
+.ceilingKey(K key)	K	获取大于等于 key 的最小键	treeMap.ceilingKey("c")	红黑树查找
+.subMap(fromKey, toKey)	SortedMap<K,V>	获取子 Map（视图）	treeMap.subMap("a", "m")	返回范围视图
+.headMap(toKey)	SortedMap<K,V>	获取小于 toKey 的子 Map	treeMap.headMap("m")	返回范围视图
+.tailMap(fromKey)	SortedMap<K,V>	获取大于等于 fromKey 的子 Map	treeMap.tailMap("m")	返回范围视图
+.comparator()	Comparator<K>	获取比较器	treeMap.comparator()	返回 null 表示使用自然顺序
+
+📌 LinkedHashMap 特有方法（按插入顺序访问）：
+ LinkedHashMap(int initialCapacity, float loadFactor, boolean accessOrder)	构造参数	accessOrder=true 表示按访问顺序排序	new LinkedHashMap<>(16, 0.75f, true)	用于实现 LRU 缓存
+.removeEldestEntry()	boolean	子类重写实现 LRU	@Override protected boolean removeEldestEntry() { return size() > MAX; }	控制 eldest 元素移除
+
+📌 ConcurrentHashMap 特有方法（线程安全）：
+.computeIfAbsent(key, Function)	V	线程安全的计算插入	map.computeIfAbsent(key, k -> new ArrayList<>())	分段锁保证原子性
+.merge(key, value, BiFunction)	V	线程安全的合并操作	map.merge(key, 1, Integer::sum)	分段锁保证原子性
+.forEach(parallelism, action)	void	并行遍历	map.forEach(4, (k,v) -> System.out.println(k))	多线程并行处理
+.search(parallelism, function)	V	并行搜索	map.search(4, (k,v) -> k.startsWith("A") ? k : null)	找到即返回
+.reduce(parallelism, function, identity)	V	并行归约	map.reduce(4, (k,v) -> v, Long::sum)	多线程累加
+.addCount(long x)	void	增加计数	counter.addCount(1)	CAS 操作
+.longSize()	long	获取大小（long 类型）	counter.longSize()	用于计数场景
+
+📌 1.2 String 核心方法
+方法	返回值	使用场景	示例	底层原理
+.length()	int	字符串长度（字符数）	"中文".length()	访问 String 对象的 value.length
+.substring(begin,end)	String	截取子串	"hello".substring(1,3)	创建新 String 对象（拷贝数组）
+.charAt(index)	char	获取指定位置字符	"abc".charAt(0)	直接访问 char[]数组
+.indexOf(str)	int	查找子串位置	"apple".indexOf("pl")	暴力匹配/KMP 算法
+.replace(old,new)	String	替换子串	"aabb".replace("aa","x")	正则匹配后重建 String
+.trim()	String	去除首尾空白符	" a ".trim()	遍历首尾非空白字符索引
+.split(regex)	String[]	按正则分割字符串	"a,b,c".split(",")	正则引擎处理
+.toLowerCase()	String	转小写	"ABC".toLowerCase()	创建新 String 对象
+.toUpperCase()	String	转大写	"abc".toUpperCase()	创建新 String 对象
+.startsWith(prefix)	boolean	检查是否以指定前缀开头	"hello".startsWith("he")	从索引 0 开始匹配
+.endsWith(suffix)	boolean	检查是否以指定后缀结尾	"hello".endsWith("lo")	从末尾开始匹配
+.contains(seq)	boolean	检查是否包含指定字符序列	"hello".contains("ell")	调用 indexOf() != -1
+.replaceFirst(regex, replacement)	String	替换第一个匹配项	"aaa".replaceFirst("a", "x") → "xaa"	正则匹配
+.replaceAll(regex, replacement)	String	替换所有匹配项	"aaa".replaceAll("a", "x") → "xxx"	正则匹配
+.matches(regex)	boolean	检查是否匹配正则表达式	"123".matches("\\d+")	完整字符串匹配
+.concat(str)	String	连接字符串	"hello".concat(" world")	创建新 String 对象
+.indexOf(str, fromIndex)	int	从指定位置开始查找	"abcabc".indexOf("bc", 2)	从 fromIndex 开始搜索
+.lastIndexOf(str)	int	从后向前查找子串位置	"abcabc".lastIndexOf("bc")	反向遍历匹配
+.lastIndexOf(str, fromIndex)	int	从指定位置向前查找	"abcabc".lastIndexOf("bc", 3)	从 fromIndex 向前搜索
+.toCharArray()	char[]	转为字符数组	"abc".toCharArray() → ['a','b','c']	拷贝 value 数组
+.getBytes(Charset)	byte[]	转为字节数组	"你好".getBytes(StandardCharsets.UTF_8)	字符编码转换
+.isEmpty()	boolean	判断是否为空字符串	s.isEmpty()	length() == 0 检查
+.isBlank()	boolean	判断是否为空或空白符	"   ".isBlank() → true	检查是否全为空白字符
+.repeat(n)	String	重复 n 次	"ab".repeat(3) → "ababab"	创建新 String 对象
+.strip()	String	去除首尾空白符（支持 Unicode）	"  hello  ".strip()	Unicode 空白字符处理
+.stripLeading()	String	去除首部空白符	"  hello".stripLeading()	Unicode 空白字符处理
+.stripTrailing()	String	去除尾部空白符	"hello  ".stripTrailing()	Unicode 空白字符处理
+.textBlock()	String	文本块（Java 15+）	String text = """Hello World""";	多行字符串字面量
+
+// 这些写法都是有效的：
+String s1 = new String(new char[]{'a', 'b', 'c'}); // 标准写法
+String s2 = new String({'a', 'b', 'c'});           // 语法糖 - 编译器会自动补全
+// 这些是有效的 char[] 初始化方式：
+char[] arr1 = new char[]{'.', '.', '.'};  // 标准写法
+char[] arr2 = {'.', '.', '.'};             // 简写语法（仅在声明时有效）
+char[] arr3 = "....".toCharArray();        // 从字符串转换
+
+1.3 List/ArrayList 核心方法
+方法	返回值	使用场景	示例	底层原理
+.add(element)	boolean	添加元素到末尾	list.add(1)	数组扩容（1.5 倍）
+.add(index, element)	void	在指定位置插入	list.add(0, "first")	数组元素后移
+.get(index)	E	获取指定位置元素	list.get(0)	直接访问数组索引
+.set(index, element)	E (旧值)	修改指定位置元素	list.set(1, "new")	数组元素替换
+.remove(index)	E (被删元素)	按索引删除	list.remove(0)	数组前移 + 缩容
+.remove(Object)	boolean	按值删除首个匹配项	list.remove("a")	遍历查找 + 删除
+.size()	int	获取元素数量	list.size()	返回 size 字段
+.isEmpty()	boolean	判断是否为空	if(list.isEmpty())	size == 0 检查
+.contains(Object)	boolean	检查元素是否存在	list.contains(1)	遍历+equals() 比较
+.indexOf(Object)	int	查找元素首次出现位置	list.indexOf("a")	顺序遍历匹配
+.lastIndexOf(Object)	int	查找元素最后出现位置	list.lastIndexOf("a")	反向遍历匹配
+.subList(from,to)	List<E>	获取子列表（视图）	list.subList(1,3)	返回 SubList 内部类
+.toArray()	Object[]	转为数组	list.toArray()	拷贝底层数组
+.toArray(T[] a)	T[]	转为指定类型数组	list.toArray(new String[0])	泛型数组转换
+.clear()	void	清空列表	list.clear()	置 size=0（不缩容）
+.sort(Comparator)	void	自定义排序	list.sort(Comparator.reverseOrder())	TimSort 算法
+.iterator()	Iterator<E>	获取迭代器	for(String s : list)	Iterator 模式遍历
+.listIterator()	ListIterator<E>	获取列表迭代器（可双向）	list.listIterator()	支持 add/set/previous
+.addAll(Collection)	boolean	添加集合所有元素	list.addAll(otherList)	批量添加
+.removeAll(Collection)	boolean	删除集合中所有匹配项	list.removeAll(toRemove)	遍历删除
+.retainAll(Collection)	boolean	仅保留集合中的元素	list.retainAll(keepSet)	交集操作
+.containsAll(Collection)	boolean	检查是否包含所有元素	list.containsAll(subset)	遍历检查
+.lastIndexOf(Object)	int	从后向前查找元素	list.lastIndexOf("a")	反向遍历
+.listIterator(int index)	ListIterator<E>	从指定位置开始迭代	list.listIterator(5)	支持双向遍历
+.ensureCapacity(int minCapacity)	void	确保最小容量	list.ensureCapacity(100)	预扩容避免多次扩容
+.trimToSize()	void	缩容到实际大小	list.trimToSize()	释放多余容量
+.forEach(action)	void	遍历执行动作	list.forEach(System.out::println)	Consumer 函数式接口
+.stream()	Stream<E>	获取流	list.stream()	Stream API 入口
+.parallelStream()	Stream<E>	获取并行流	list.parallelStream()	并行处理
+.spliterator()	Spliterator<E>	获取可分割迭代器	list.spliterator()	并行迭代支持
+.getFirst()	E	获取第一个元素（Java 21+）	list.getFirst()	同 get(0)
+.getLast()	E	获取最后一个元素（Java 21+）	list.getLast()	同 get(size-1)
+.addFirst(E)	void	在开头添加元素（Java 21+）	list.addFirst("head")	同 add(0, element)
+.addLast(E)	void	在末尾添加元素（Java 21+）	list.addLast("tail")	同 add(element)
+.removeFirst()	E	删除并返回第一个元素（Java 21+）	list.removeFirst()	同 remove(0)
+.removeLast()	E	删除并返回最后一个元素（Java 21+）	list.removeLast()	同 remove(size-1)
+.setAll(int, Function)	void	按函数设置所有元素（Java 21+）	list.setAll(i -> i * 2)	按索引计算值
+
+📌 LinkedList 特有方法（双向链表）：
+.addFirst(E)	void	在链表开头插入	list.addFirst("head")	O(1) 时间复杂度
+.addLast(E)	void	在链表末尾插入	list.addLast("tail")	O(1) 时间复杂度
+.removeFirst()	E	删除并返回第一个元素	list.removeFirst()	O(1) 时间复杂度
+.removeLast()	E	删除并返回最后一个元素	list.removeLast()	O(1) 时间复杂度
+.getFirst()	E	获取第一个元素	list.getFirst()	O(1) 时间复杂度
+.getLast()	E	获取最后一个元素	list.getLast()	O(1) 时间复杂度
+.add(E)	boolean	在末尾添加元素	list.add("tail")	同 addLast()
+.offer(E)	boolean	在末尾添加元素（队列接口）	list.offer("tail")	返回 false 表示失败
+.offerFirst(E)	boolean	在开头添加元素	list.offerFirst("head")	队列/双端队列操作
+.offerLast(E)	boolean	在末尾添加元素	list.offerLast("tail")	队列/双端队列操作
+.poll()	E	获取并删除队首元素	list.poll()	同 removeFirst()
+.pollFirst()	E	获取并删除队首元素	list.pollFirst()	双端队列操作
+.pollLast()	E	获取并删除队尾元素	list.pollLast()	双端队列操作
+.peek()	E	获取但不删除队首元素	list.peek()	同 getFirst()
+.peekFirst()	E	获取但不删除队首元素	list.peekFirst()	双端队列操作
+.peekLast()	E	获取但不删除队尾元素	list.peekLast()	双端队列操作
+.pop()	E	从栈顶弹出元素	list.pop()	同 removeFirst()
+.push(E)	void	压入栈顶元素	list.push("top")	同 addFirst()
+.removeOccurrence(Object)	boolean	删除首次出现的元素	list.removeOccurrence("a")	从前往后查找删除
+.removeLastOccurrence(Object)	boolean	删除最后一次出现的元素	list.removeLastOccurrence("a")	从后往前查找删除
+.descendingIterator()	Iterator<E>	获取降序迭代器	for(String s : list.descendingIterator())	反向遍历
+
+📌 CopyOnWriteArrayList 特有方法（线程安全）：
+.add(E)	boolean	添加元素（线程安全）	list.add("item")	写时复制，读无锁
+.set(int, E)	E	设置元素（线程安全）	list.set(0, "new")	写时复制
+.remove(int)	E	删除元素（线程安全）	list.remove(0)	写时复制
+.iterator()	Iterator<E>	获取迭代器（弱一致性）	for(String s : list)	快照迭代器
+.addIfAbsent(E)	boolean	不存在时添加	list.addIfAbsent("item")	避免重复添加
+.addAllAbsent(Collection)	int	添加不存在的元素	list.addAllAbsent(other)	返回实际添加数量
+
+String 理解为 char 组，list,array 就是数组，两个都是序 - 值对。
+
+1.4 Set 核心方法
+方法	返回值	使用场景	示例	底层原理
+.add(E)	boolean	添加元素	set.add("apple")	底层调用 HashMap.put()
+.remove(Object)	boolean	删除元素	set.remove("apple")	底层调用 HashMap.remove()
+.contains(Object)	boolean	检查元素是否存在	set.contains("apple")	底层调用 HashMap.containsKey()
+.size()	int	获取元素数量	set.size()	返回 size 字段
+.isEmpty()	boolean	判断是否为空	set.isEmpty()	size == 0 检查
+.iterator()	Iterator<E>	获取迭代器	for(String s : set)	Iterator 模式遍历
+.clear()	void	清空集合	set.clear()	清空底层 Map
+.toArray()	Object[]	转为数组	set.toArray()	拷贝元素到新数组
+.toArray(T[] a)	T[]	转为指定类型数组	set.toArray(new String[0])	泛型数组转换
+.addAll(Collection)	boolean	添加集合所有元素	set.addAll(otherSet)	批量添加
+.removeAll(Collection)	boolean	删除集合中所有匹配项	set.removeAll(toRemove)	遍历删除
+.retainAll(Collection)	boolean	仅保留集合中的元素	set.retainAll(keepSet)	交集操作
+.containsAll(Collection)	boolean	检查是否包含所有元素	set.containsAll(subset)	遍历检查
+.stream()	Stream<E>	获取流	set.stream()	Stream API 入口
+.parallelStream()	Stream<E>	获取并行流	set.parallelStream()	并行处理
+.forEach(action)	void	遍历执行动作	set.forEach(System.out::println)	Consumer 函数式接口
+.spliterator()	Spliterator<E>	获取可分割迭代器	set.spliterator()	并行迭代支持
+
+📌 HashSet 特有方法：
+HashSet(int initialCapacity, float loadFactor)	构造参数	指定初始容量和负载因子	new HashSet<>(16, 0.75f)	底层 HashMap 参数
+HashSet(int initialCapacity)	构造参数	指定初始容量	new HashSet<>(32)	底层 HashMap 容量
+
+📌 TreeSet 特有方法（按顺序访问）：
+.first()	E	获取第一个（最小）元素	treeSet.first()	红黑树最左节点
+.last()	E	获取最后一个（最大）元素	treeSet.last()	红黑树最右节点
+.lower(E e)	E	获取严格小于 e 的最小元素	treeSet.lower("c")	红黑树查找
+.higher(E e)	E	获取严格大于 e 的最小元素	treeSet.higher("c")	红黑树查找
+.floor(E e)	E	获取小于等于 e 的最大元素	treeSet.floor("c")	红黑树查找
+.ceiling(E e)	E	获取大于等于 e 的最小元素	treeSet.ceiling("c")	红黑树查找
+.pollFirst()	E	获取并删除第一个元素	treeSet.pollFirst()	用于有序遍历
+.pollLast()	E	获取并删除最后一个元素	treeSet.pollLast()	用于有序遍历
+.subSet(fromElement, toElement)	SortedSet<E>	获取子 Set（视图）	treeSet.subSet("a", "m")	返回范围视图
+.subSet(fromElement, boolean fromInclusive, toElement, boolean toInclusive)	SortedSet<E>	获取子 Set（可指定开闭）	treeSet.subSet("a", true, "m", false)	包含/排除边界
+.headSet(toElement)	SortedSet<E>	获取小于 toElement 的子 Set	treeSet.headSet("m")	返回范围视图
+.headSet(toElement, boolean inclusive)	SortedSet<E>	获取子 Set（可指定是否包含边界）	treeSet.headSet("m", true)	包含/排除边界
+.tailSet(fromElement)	SortedSet<E>	获取大于等于 fromElement 的子 Set	treeSet.tailSet("m")	返回范围视图
+.tailSet(fromElement, boolean inclusive)	SortedSet<E>	获取子 Set（可指定是否包含边界）	treeSet.tailSet("m", true)	包含/排除边界
+.comparator()	Comparator<E>	获取比较器	treeSet.comparator()	返回 null 表示使用自然顺序
+.descendingSet()	NavigableSet<E>	获取降序视图	treeSet.descendingSet()	反向遍历
+.descendingIterator()	Iterator<E>	获取降序迭代器	for(String s : treeSet.descendingIterator())	反向遍历
+
+📌 LinkedHashSet 特有方法：
+LinkedHashSet(int initialCapacity, float loadFactor)	构造参数	指定初始容量和负载因子	new LinkedHashSet<>(16, 0.75f)	按插入顺序迭代
+
+📌 EnumSet 特有方法（枚举专用）：
+noneOf(Class<E> elementType)	EnumSet<E>	创建空枚举集	EnumSet.noneOf(DayOfWeek.class)	位向量实现
+allOf(Class<E> elementType)	EnumSet<E>	包含所有枚举值的集合	EnumSet.allOf(DayOfWeek.class)	位向量实现
+of(E e)	EnumSet<E>	创建单元素集合	EnumSet.of(DayOfWeek.MONDAY)	位向量实现
+of(E first, E... rest)	EnumSet<E>	创建多元素集合	EnumSet.of(DayOfWeek.MONDAY, DayOfWeek.TUESDAY)	位向量实现
+range(E from, E to)	EnumSet<E>	创建范围集合	EnumSet.range(DayOfWeek.MONDAY, DayOfWeek.FRIDAY)	位向量实现
+complementOf(EnumSet<E> s)	EnumSet<E>	创建补集	EnumSet.complementOf(weekend)	位运算
+
+📌 CopyOnWriteArraySet 特有方法（线程安全）：
+.add(E)	boolean	添加元素（线程安全）	set.add("item")	写时复制，读无锁
+.remove(Object)	boolean	删除元素（线程安全）	set.remove("apple")	写时复制
+.iterator()	Iterator<E>	获取迭代器（弱一致性）	for(String s : set)	快照迭代器
+
+1.5 Queue/Deque 核心方法
+方法	返回值	使用场景	示例	底层原理
+.add(E)	boolean	添加元素到队尾	queue.add("item")	容量受限时抛异常
+.offer(E)	boolean	添加元素到队尾	queue.offer("item")	容量受限时返回 false
+.remove()	E	获取并删除队首元素	queue.remove()	空队列抛异常
+.poll()	E	获取并删除队首元素	queue.poll()	空队列返回 null
+.element()	E	获取但不删除队首元素	queue.element()	空队列抛异常
+.peek()	E	获取但不删除队首元素	queue.peek()	空队列返回 null
+.size()	int	获取元素数量	queue.size()	返回 size 字段
+.isEmpty()	boolean	判断是否为空	queue.isEmpty()	size == 0 检查
+.clear()	void	清空队列	queue.clear()	清空底层数据结构
+.contains(Object)	boolean	检查元素是否存在	queue.contains("item")	遍历查找
+.toArray()	Object[]	转为数组	queue.toArray()	拷贝元素
+.iterator()	Iterator<E>	获取迭代器	for(String s : queue)	Iterator 模式遍历
+
+📌 PriorityQueue 特有方法（堆结构）：
+PriorityQueue(int initialCapacity, Comparator<? super E> comparator)	构造参数	指定初始容量和比较器	new PriorityQueue<>(10, Comparator.reverseOrder())	自定义排序
+PriorityQueue(Collection<? extends E> c)	构造参数	从集合创建	new PriorityQueue<>(list)	批量初始化
+.add(E)	boolean	添加元素	queue.add("item")	自动上浮调整堆
+.offer(E)	boolean	添加元素	queue.offer("item")	同 add()
+.poll()	E	获取并删除队首（优先级最高）元素	queue.poll()	O(log n) 时间复杂度
+.peek()	E	获取但不删除队首元素	queue.peek()	O(1) 时间复杂度
+.remove(Object)	boolean	删除指定元素	queue.remove("item")	O(n) 时间复杂度
+.contains(Object)	boolean	检查元素是否存在	queue.contains("item")	O(n) 时间复杂度
+.size()	int	获取元素数量	queue.size()	返回 size 字段
+.clear()	void	清空队列	queue.clear()	置 size=0
+.toArray()	Object[]	转为数组	queue.toArray()	拷贝元素
+.comparator()	Comparator<? super E>	获取比较器	queue.comparator()	返回 null 表示使用自然顺序
+.removeIf(Predicate)	boolean	删除满足条件的元素	queue.removeIf(s -> s.length() > 5)	Java 8+ 方法
+.stream()	Stream<E>	获取流	queue.stream()	Stream API 入口
+.forEach(action)	void	遍历执行动作	queue.forEach(System.out::println)	Consumer 函数式接口
+.spliterator()	Spliterator<E>	获取可分割迭代器	queue.spliterator()	并行迭代支持
+
+📌 ArrayDeque 特有方法（双端队列）：
+ArrayDeque(int numElements)	构造参数	指定初始容量	new ArrayDeque<>(16)	环形数组实现
+.addFirst(E)	void	在队首插入	deque.addFirst("head")	O(1) 时间复杂度
+.addLast(E)	void	在队尾插入	deque.addLast("tail")	O(1) 时间复杂度
+.offerFirst(E)	boolean	在队首插入（可限制容量）	deque.offerFirst("head")	容量满时返回 false
+.offerLast(E)	boolean	在队尾插入（可限制容量）	deque.offerLast("tail")	容量满时返回 false
+.removeFirst()	E	获取并删除队首元素	deque.removeFirst()	空队列抛异常
+.removeLast()	E	获取并删除队尾元素	deque.removeLast()	空队列抛异常
+.pollFirst()	E	获取并删除队首元素	deque.pollFirst()	空队列返回 null
+.pollLast()	E	获取并删除队尾元素	deque.pollLast()	空队列返回 null
+.getFirst()	E	获取但不删除队首元素	deque.getFirst()	空队列抛异常
+.getLast()	E	获取但不删除队尾元素	deque.getLast()	空队列抛异常
+.peekFirst()	E	获取但不删除队首元素	deque.peekFirst()	空队列返回 null
+.peekLast()	E	获取但不删除队尾元素	deque.peekLast()	空队列返回 null
+.push(E)	void	压入栈顶	deque.push("top")	同 addFirst()
+.pop()	E	弹出栈顶	deque.pop()	同 removeFirst()
+.removeFirstOccurrence(Object)	boolean	删除首次出现的元素	deque.removeFirstOccurrence("a")	从头开始查找
+.removeLastOccurrence(Object)	boolean	删除最后一次出现的元素	deque.removeLastOccurrence("a")	从尾开始查找
+.descendingIterator()	Iterator<E>	获取降序迭代器	for(String s : deque.descendingIterator())	反向遍历
+
+📌 ConcurrentLinkedQueue 特有方法（线程安全队列）：
+.add(E)	boolean	添加元素（线程安全）	queue.add("item")	CAS 操作，无锁
+.offer(E)	boolean	添加元素（线程安全）	queue.offer("item")	同 add()
+.poll()	E	获取并删除队首（线程安全）	queue.poll()	CAS 操作，无锁
+.peek()	E	获取但不删除队首（线程安全）	queue.peek()	读操作无锁
+.size()	int	获取元素数量	queue.size()	O(n) 时间复杂度（遍历计数）
+.isEmpty()	boolean	判断是否为空	queue.isEmpty()	O(1) 时间复杂度
+.iterator()	Iterator<E>	获取迭代器（弱一致性）	for(String s : queue)	快照迭代器
+.spliterator()	Spliterator<E>	获取可分割迭代器	queue.spliterator()	并行迭代支持
+
+📌 BlockingQueue 特有方法（阻塞队列）：
+.put(E)	void	添加元素（阻塞）	queue.put("item")	容量满时阻塞等待
+.take()	E	获取并删除队首（阻塞）	queue.take()	空队列时阻塞等待
+.offer(E, long timeout, TimeUnit)	boolean	超时添加	queue.offer("item", 1, TimeUnit.SECONDS)	超时返回 false
+.poll(long timeout, TimeUnit)	E	超时获取	queue.poll(1, TimeUnit.SECONDS)	超时返回 null
+.remainingCapacity()	int	获取剩余容量	queue.remainingCapacity()	用于有界队列
+.drainTo(Collection)	int	批量转移到集合	queue.drainTo(list)	高性能批量取出
+.drainTo(Collection, int maxElements)	int	批量转移指定数量	queue.drainTo(list, 10)	限制转移数量
+.size()	int	获取元素数量	queue.size()	可能有竞争条件
+.isEmpty()	boolean	判断是否为空	queue.isEmpty()	可能有竞争条件
+
+📌 DelayQueue 特有方法（延迟队列）：
+.add(E)	boolean	添加延迟元素	queue.add(new DelayedItem())	元素必须实现 Delayed 接口
+.offer(E)	boolean	添加延迟元素	queue.offer(new DelayedItem())	同 add()
+.poll()	E	获取已到期的队首元素	queue.poll()	未到期返回 null
+.take()	E	获取并删除队首（阻塞直到到期）	queue.take()	阻塞等待元素到期
+.remainingCapacity()	int	获取剩余容量	queue.remainingCapacity()	总是返回 Integer.MAX_VALUE
+.size()	int	获取元素数量	queue.size()	只计算已到期的元素
+.isEmpty()	boolean	判断是否为空	queue.isEmpty()	只检查已到期的元素
+
+1.6 Arrays 工具类核心方法
+方法	返回值	使用场景	示例	底层原理
+.sort(array)	void	数组排序	Arrays.sort(arr)	Dual-Pivot Quicksort / TimSort
+.sort(array, fromIndex, toIndex)	void	数组部分排序	Arrays.sort(arr, 0, 10)	只排序指定范围
+.sort(array, Comparator)	void	自定义排序	Arrays.sort(arr, Comparator.reverseOrder())	使用比较器
+.binarySearch(array, key)	int	二分查找	Arrays.binarySearch(arr, key)	必须在有序数组上使用
+.binarySearch(array, fromIndex, toIndex, key)	int	范围二分查找	Arrays.binarySearch(arr, 0, 10, key)	在指定范围内查找
+.equals(array1, array2)	boolean	判断两数组是否相等	Arrays.equals(arr1, arr2)	逐个元素比较
+.deepEquals(array1, array2)	boolean	判断多维数组是否相等	Arrays.deepEquals(arr1, arr2)	递归比较
+.fill(array, value)	void	填充数组	Arrays.fill(arr, 0)	批量赋值
+.fill(array, fromIndex, toIndex, value)	void	部分填充数组	Arrays.fill(arr, 0, 10, 1)	填充指定范围
+.copyOf(array, newLength)	T[]	复制数组	Arrays.copyOf(arr, 20)	扩容常用
+.copyOfRange(array, from, to)	T[]	复制数组范围	Arrays.copyOfRange(arr, 0, 10)	截取数组
+.toString(array)	String	数组转字符串	Arrays.toString(arr)	"[1, 2, 3]"格式
+.deepToString(array)	String	多维数组转字符串	Arrays.deepToString(arr2D)	递归转换
+.asList(T... a)	List<T>	数组转列表	List<String> list = Arrays.asList("a", "b")	返回固定大小列表
+.stream(array)	Stream<T>	数组转流	IntStream is = Arrays.stream(new int[]{1,2,3})	Stream API 入口
+.parallelStream(array)	Stream<T>	数组转并行流	Arrays.parallelStream(arr)	并行处理
+.spliterator(array)	Spliterator<T>	获取可分割迭代器	Arrays.spliterator(arr)	并行迭代支持
+.hashCode(array)	int	计算数组哈希码	Arrays.hashCode(arr)	逐个元素计算哈希
+.deepHashCode(array)	int	计算多维数组哈希码	Arrays.deepHashCode(arr2D)	递归计算哈希
+.compare(array1, array2)	int	比较两数组	Arrays.compare(arr1, arr2)	字典序比较
+.mismatch(array1, array2)	int	查找第一个不匹配位置	Arrays.mismatch(arr1, arr2)	返回索引或 -1
+.setAll(array, generator)	void	按函数设置所有元素	Arrays.setAll(arr, i -> i * 2)	按索引计算值
+.parallelPrefix(array, op)	void	并行前缀计算	Arrays.parallelPrefix(arr, Integer::sum)	累加数组
+.parallelSetAll(array, generator)	void	并行设置所有元素	Arrays.parallelSetAll(arr, i -> i * 2)	多线程计算
+
+📌 1.7 底层数据结构对比
+类	存储结构	随机访问	插入/删除	线程安全
+ArrayList	动态数组	O(1)	O(n)	❌ 不安全
+LinkedList	双向链表	O(n)	O(1)	❌ 不安全
+HashMap	数组 + 链表/红黑树	O(1)	O(1)	❌ 不安全
+String	final char[]	O(1)	不可变	✅ 安全
+HashSet	HashMap 封装	O(1)	O(1)	❌ 不安全
+TreeSet	TreeMap 封装	O(log n)	O(log n)	❌ 不安全
+LinkedHashSet	LinkedHashMap 封装	O(1)	O(1)	❌ 不安全
+PriorityQueue	二叉堆	O(1) 获取队首	O(log n)	❌ 不安全
+ArrayDeque	环形数组	O(1)	O(1)	❌ 不安全
+ConcurrentHashMap	分段锁+CAS	O(1)	O(1)	✅ 安全
+CopyOnWriteArrayList	写时复制	O(1)	O(n)	✅ 安全
+ConcurrentLinkedQueue	CAS 无锁	O(n) 查找	O(1)	✅ 安全
+
+二、字符串操作
+1.  将字符串转换为字符数组
+    char[] charArray = str.toCharArray(); 
+    String str = "Hello";
+    char[] charArray = str.toCharArray(); // 结果：['H','e','l','l','o']，便于逐个处理字符
+    
+2.  获取指定索引位置的字符
+    char ch = str.charAt(int index); 
+    String str = "Hello";
+    char ch = str.charAt(0); // 结果：'H'，获取字符串中第一个字符
+    
+3.  提取子字符串
+    String subStr = str.substring(int beginIndex, int endIndex); 
+    String str = "Hello World";
+    String subStr = str.substring(6, 11); // 结果："World"，提取从索引 6 开始到索引 11（不包括）的子串
+    
+4.  查找字符或子串的索引
+    int index = str.indexOf(String subStr); 
+    String str = "Hello World";
+    int index = str.indexOf("World"); // 结果：6，返回"World"在字符串中首次出现的起始索引
+    
+5.  替换字符或子串
+    String newStr = str.replace(char oldChar, char newChar); 
+    String str = "Hello World";
+    String newStr = str.replace('o', '0'); // 结果："Hell0 W0rld"，将所有字符'o'替换为'0'
+    
+6.  分割字符串为数组
+    String[] parts = str.split(String regex); 
+    String str = "apple,banana,orange";
+    String[] fruits = str.split(","); // 结果：["apple", "banana", "orange"]，按逗号分割字符串
+    
+7.  去除首尾空格
+    String trimmedStr = str.trim(); 
+    String str = "  Hello World  ";
+    String trimmedStr = str.trim(); // 结果："Hello World"，去除字符串首尾的空格
+    
+二、集合操作 (Map, Set, List)
+1.  安全获取值或返回默认值 (Map)
+    V value = map.getOrDefault(Object key, V defaultValue); 
+    Map<String, Integer> map = new HashMap<>();
+    map.put("apple", 10);
+    int count = map.getOrDefault("orange", 0); // 结果：0 (因为"orange"不存在)，避免返回 null
+    
+2.  仅当键不存在时才放入值 (Map)
+    V value = map.putIfAbsent(K key, V value); 
+    Map<String, Integer> map = new HashMap<>();
+    map.putIfAbsent("apple", 10); // {"apple"=10}
+    map.putIfAbsent("apple", 20); // {"apple"=10} (因为已存在，故不覆盖)
+    
+3.  合并键的值 (Map)
+    map.merge(K key, V value, BiFunction remappingFunction); 
+    Map<String, Integer> counts = new HashMap<>();
+    counts.merge("apple", 1, Integer::sum); // {"apple"=1}
+    counts.merge("apple", 2, Integer::sum); // {"apple"=3}，存在则相加，不存在则插入
+    
+
+4.  键不存在时计算并放入新值 (Map)
+    V value = map.computeIfAbsent(K key, Function mappingFunction); 
+    Map<String, List<String>> map = new HashMap<>();
+    List<String> list = map.computeIfAbsent("fruits", k -> new ArrayList<>()); // 若"fruits"键不存在，则创建一个新 ArrayList 作为值
+   另外的计算规则函数：
+ 覆盖旧值 (oldValue, newValue) -> newValue 总是使用新的值替换旧的值
+保留最大值 Integer::max 或 (oldVal, newVal) -> Math.max(oldVal, newVal) 保留两次值中较大的那个
+字符串连接 (oldVal, newVal) -> oldVal + newVal 将新旧字符串连接起来
+列表合并 (oldList, newList) -> { /* 合并两列表逻辑 */ } 将两个列表合并为一个
+
+ 三、数组操作
+1.  数组排序
+    Arrays.sort(array); 
+    int[] array = {5, 3, 9, 1};
+    Arrays.sort(array); // 结果：[1, 3, 5, 9]，将数组按升序排序
+    
+2.  数组二分查找 (必须在有序数组上使用)
+    int index = Arrays.binarySearch(array, key); 
+    int[] sortedArray = {1, 3, 5, 9};
+    int index = Arrays.binarySearch(sortedArray, 5); // 结果：2，返回元素 5 在数组中的索引
+    
+3.  判断两数组是否相等
+    boolean isEqual = Arrays.equals(array1, array2); 
+    int[] arr1 = {1, 2, 3};
+    int[] arr2 = {1, 2, 3};
+    boolean isEqual = Arrays.equals(arr1, arr2); // 结果：true，比较两数组内容是否相同
+    
+ 四、其他实用函数
+1.  字符串与数值转换
+    int i = Integer.parseInt(String str); 
+    String s = String.valueOf(int i); 
+    String numStr = "123";
+    int num = Integer.parseInt(numStr); // 字符串"123" -> 整数 123
+    int value = 456;
+    String strValue = String.valueOf(value); // 整数 456 -> 字符串"456"
+    
+2.  数学绝对值
+    int absValue = Math.abs(int a);
+    int negative = -10;
+    int positive = Math.abs(negative); // 结果：10，返回参数的绝对值
+    
+3.  集合转数组
+    T[] array = list.toArray(T[] a);
+    List<String> list = Arrays.asList("a", "b", "c");
+    String[] array = list.toArray(new String[0]); // 结果：["a", "b", "c"]，集合转数组
+    
+4.  数组转集合
+    List<T> list = Arrays.asList(T... a);
+    String[] arr = {"a", "b", "c"};
+    List<String> list = Arrays.asList(arr); // 结果：["a", "b", "c"]，数组转固定大小列表
+    
+5.  集合复制
+    Collections.copy(List<T> dest, List<? extends T> src);
+    List<String> dest = new ArrayList<>(Arrays.asList("1", "2", "3"));
+    List<String> src = Arrays.asList("a", "b");
+    Collections.copy(dest, src); // 结果：["a", "b", "3"]，复制 src 到 dest
+    
+6.  集合填充
+    Collections.fill(List<T> list, T obj);
+    List<String> list = new ArrayList<>(Arrays.asList("1", "2", "3"));
+    Collections.fill(list, "x"); // 结果：["x", "x", "x"]，填充集合
+    
+7.  集合反转
+    Collections.reverse(List<?> list);
+    List<String> list = Arrays.asList("a", "b", "c");
+    Collections.reverse(list); // 结果：["c", "b", "a"]，反转集合
+    
+8.  集合排序
+    Collections.sort(List<T> list);
+    Collections.sort(List<T> list, Comparator<? super T> c);
+    List<Integer> list = Arrays.asList(3, 1, 2);
+    Collections.sort(list); // 结果：[1, 2, 3]，自然排序
+    Collections.sort(list, Comparator.reverseOrder()); // 结果：[3, 2, 1]，逆序
+    
+9.  集合查找最大/最小值
+    T max = Collections.max(Collection<? extends T> coll);
+    T min = Collections.min(Collection<? extends T> coll);
+    List<Integer> list = Arrays.asList(3, 1, 4, 1, 5);
+    Integer max = Collections.max(list); // 结果：5
+    Integer min = Collections.min(list); // 结果：1
+    
+10.  集合二分查找（必须有序）
+    int index = Collections.binarySearch(List<? extends Comparable<? super T>> list, T key);
+    List<Integer> list = Arrays.asList(1, 2, 3, 4, 5);
+    int index = Collections.binarySearch(list, 3); // 结果：2，返回索引
+    
+11.  集合并集
+    Set<T> union = new HashSet<>(set1);
+    union.addAll(set2);
+    Set<String> set1 = new HashSet<>(Arrays.asList("a", "b"));
+    Set<String> set2 = new HashSet<>(Arrays.asList("b", "c"));
+    Set<String> union = new HashSet<>(set1);
+    union.addAll(set2); // 结果：["a", "b", "c"]
+    
+12.  集合交集
+    Set<T> intersection = new HashSet<>(set1);
+    intersection.retainAll(set2);
+    Set<String> set1 = new HashSet<>(Arrays.asList("a", "b"));
+    Set<String> set2 = new HashSet<>(Arrays.asList("b", "c"));
+    Set<String> intersection = new HashSet<>(set1);
+    intersection.retainAll(set2); // 结果：["b"]
+    
+13.  集合差集
+    Set<T> difference = new HashSet<>(set1);
+    difference.removeAll(set2);
+    Set<String> set1 = new HashSet<>(Arrays.asList("a", "b"));
+    Set<String> set2 = new HashSet<>(Arrays.asList("b", "c"));
+    Set<String> difference = new HashSet<>(set1);
+    difference.removeAll(set2); // 结果：["a"]
+    
+14.  集合去重
+    Set<T> unique = new HashSet<>(list);
+    List<String> list = Arrays.asList("a", "b", "a", "c");
+    Set<String> unique = new HashSet<>(list); // 结果：["a", "b", "c"]，自动去重
+    
+15.  集合判等
+    boolean equals = set1.equals(set2);
+    Set<String> set1 = new HashSet<>(Arrays.asList("a", "b"));
+    Set<String> set2 = new HashSet<>(Arrays.asList("b", "a"));
+    boolean equals = set1.equals(set2); // 结果：true，集合无序
+
+五、常用算法模板
+1.  双指针模板（有序数组两数之和）
+    int left = 0, right = nums.length - 1;
+    while (left < right) {
+        int sum = nums[left] + nums[right];
+        if (sum == target) return new int[]{left, right};
+        else if (sum < target) left++;
+        else right--;
+    }
+    
+2.  滑动窗口模板
+    int left = 0, right = 0, count = 0;
+    while (right < nums.length) {
+        // 扩大窗口
+        if (nums[right] == 1) count++;
+        right++;
+        
+        // 缩小窗口
+        while (count > k) {
+            if (nums[left] == 1) count--;
+            left++;
+        }
+        
+        // 更新结果
+        maxLen = Math.max(maxLen, right - left);
+    }
+    
+3.  二分查找模板
+    int left = 0, right = nums.length - 1;
+    while (left <= right) {
+        int mid = left + (right - left) / 2;
+        if (nums[mid] == target) return mid;
+        else if (nums[mid] < target) left = mid + 1;
+        else right = mid - 1;
+    }
+    return -1;
+    
+4.  回溯算法模板
+    void backtrack(路径，选择列表) {
+        if (满足结束条件) {
+            结果.add(路径);
+            return;
+        }
+        
+        for (选择：选择列表) {
+            做选择;
+            backtrack(路径，选择列表);
+            撤销选择;
+        }
+    }
+    
+5.  BFS 模板
+    Queue<Node> queue = new LinkedList<>();
+    Set<Node> visited = new HashSet<>();
+    queue.offer(start);
+    visited.add(start);
+    
+    while (!queue.isEmpty()) {
+        Node node = queue.poll();
+        if (node == target) return true;
+        
+        for (Node neighbor : node.neighbors) {
+            if (!visited.contains(neighbor)) {
+                queue.offer(neighbor);
+                visited.add(neighbor);
+            }
+        }
+    }
+    
+6.  DFS 模板（递归）
+    void dfs(Node node, Set<Node> visited) {
+        if (node == null) return;
+        if (visited.contains(node)) return;
+        
+        visited.add(node);
+        // 处理当前节点
+        
+        for (Node neighbor : node.neighbors) {
+            dfs(neighbor, visited);
+        }
+    }
+    
+7.  快速排序模板
+    void quickSort(int[] arr, int left, int right) {
+        if (left >= right) return;
+        
+        int pivot = arr[left + (right - left) / 2];
+        int i = left, j = right;
+        
+        while (i <= j) {
+            while (arr[i] < pivot) i++;
+            while (arr[j] > pivot) j--;
+            if (i <= j) {
+                swap(arr, i, j);
+                i++;
+                j--;
+            }
+        }
+        
+        quickSort(arr, left, j);
+        quickSort(arr, i, right);
+    }
+    
+8.  归并排序模板
+    void mergeSort(int[] arr, int left, int right) {
+        if (left >= right) return;
+        
+        int mid = left + (right - left) / 2;
+        mergeSort(arr, left, mid);
+        mergeSort(arr, mid + 1, right);
+        merge(arr, left, mid, right);
+    }
+    
+    void merge(int[] arr, int left, int mid, int right) {
+        int[] temp = new int[right - left + 1];
+        int i = left, j = mid + 1, k = 0;
+        
+        while (i <= mid && j <= right) {
+            temp[k++] = arr[i] <= arr[j] ? arr[i++] : arr[j++];
+        }
+        while (i <= mid) temp[k++] = arr[i++];
+        while (j <= right) temp[k++] = arr[j++];
+        
+        System.arraycopy(temp, 0, arr, left, temp.length);
+    }
+    
+9.  堆排序模板
+    void heapSort(int[] arr) {
+        int n = arr.length;
+        
+        // 建堆
+        for (int i = n / 2 - 1; i >= 0; i--) {
+            heapify(arr, n, i);
+        }
+        
+        // 排序
+        for (int i = n - 1; i > 0; i--) {
+            swap(arr, 0, i);
+            heapify(arr, i, 0);
+        }
+    }
+    
+    void heapify(int[] arr, int n, int i) {
+        int largest = i;
+        int left = 2 * i + 1;
+        int right = 2 * i + 2;
+        
+        if (left < n && arr[left] > arr[largest]) largest = left;
+        if (right < n && arr[right] > arr[largest]) largest = right;
+        
+        if (largest != i) {
+            swap(arr, i, largest);
+            heapify(arr, n, largest);
+        }
+    }
+    
+10.  动态规划模板（背包问题）
+    int[] dp = new int[capacity + 1];
+    for (int i = 0; i < n; i++) {
+        for (int j = capacity; j >= weight[i]; j--) {
+            dp[j] = Math.max(dp[j], dp[j - weight[i]] + value[i]);
+        }
+    }
+    return dp[capacity];
+    
+11.  并查集模板
+    class UnionFind {
+        int[] parent;
+        int[] rank;
+        
+        public UnionFind(int n) {
+            parent = new int[n];
+            rank = new int[n];
+            for (int i = 0; i < n; i++) {
+                parent[i] = i;
+                rank[i] = 1;
+            }
+        }
+        
+        public int find(int x) {
+            if (parent[x] != x) {
+                parent[x] = find(parent[x]); // 路径压缩
+            }
+            return parent[x];
+        }
+        
+        public void union(int x, int y) {
+            int rootX = find(x);
+            int rootY = find(y);
+            
+            if (rootX != rootY) {
+                if (rank[rootX] > rank[rootY]) {
+                    parent[rootY] = rootX;
+                } else if (rank[rootX] < rank[rootY]) {
+                    parent[rootX] = rootY;
+                } else {
+                    parent[rootY] = rootX;
+                    rank[rootX]++;
+                }
+            }
+        }
+        
+        public boolean connected(int x, int y) {
+            return find(x) == find(y);
+        }
+    }
+    
+12.  前缀和模板
+    int[] prefixSum = new int[n + 1];
+    for (int i = 0; i < n; i++) {
+        prefixSum[i + 1] = prefixSum[i] + nums[i];
+    }
+    // 区间和 [i, j] = prefixSum[j + 1] - prefixSum[i]
+    
+13.  单调栈模板（下一个更大元素）
+    Stack<Integer> stack = new Stack<>();
+    int[] result = new int[n];
+    for (int i = n - 1; i >= 0; i--) {
+        while (!stack.isEmpty() && stack.peek() <= nums[i]) {
+            stack.pop();
+        }
+        result[i] = stack.isEmpty() ? -1 : stack.peek();
+        stack.push(nums[i]);
+    }
+    
+14.  拓扑排序模板（Kahn 算法）
+    Queue<Integer> queue = new LinkedList<>();
+    int[] indegree = new int[n];
+    
+    // 计算入度
+    for (int[] edge : edges) {
+        indegree[edge[1]]++;
+    }
+    
+    // 入度为 0 的节点入队
+    for (int i = 0; i < n; i++) {
+        if (indegree[i] == 0) {
+            queue.offer(i);
+        }
+    }
+    
+    // BFS
+    while (!queue.isEmpty()) {
+        int node = queue.poll();
+        result.add(node);
+        
+        for (int neighbor : graph.get(node)) {
+            indegree[neighbor]--;
+            if (indegree[neighbor] == 0) {
+                queue.offer(neighbor);
+            }
+        }
+    }
+    
+15.  KMP 算法模板
+    int[] computePrefixFunction(String pattern) {
+        int[] pi = new int[pattern.length()];
+        int j = 0;
+        for (int i = 1; i < pattern.length(); i++) {
+            while (j > 0 && pattern.charAt(i) != pattern.charAt(j)) {
+                j = pi[j - 1];
+            }
+            if (pattern.charAt(i) == pattern.charAt(j)) {
+                j++;
+            }
+            pi[i] = j;
+        }
+        return pi;
+    }
+    
+    int kmpSearch(String text, String pattern) {
+        int[] pi = computePrefixFunction(pattern);
+        int j = 0;
+        for (int i = 0; i < text.length(); i++) {
+            while (j > 0 && text.charAt(i) != pattern.charAt(j)) {
+                j = pi[j - 1];
+            }
+            if (text.charAt(i) == pattern.charAt(j)) {
+                j++;
+            }
+            if (j == pattern.length()) {
+                return i - j + 1; // 找到匹配
+            }
+        }
+        return -1;
+    }
+    
+16.  Trie 树模板
+    class TrieNode {
+        TrieNode[] children = new TrieNode[26];
+        boolean isEnd = false;
+    }
+    
+    class Trie {
+        TrieNode root = new TrieNode();
+        
+        public void insert(String word) {
+            TrieNode node = root;
+            for (char c : word.toCharArray()) {
+                int index = c - 'a';
+                if (node.children[index] == null) {
+                    node.children[index] = new TrieNode();
+                }
+                node = node.children[index];
+            }
+            node.isEnd = true;
+        }
+        
+        public boolean search(String word) {
+            TrieNode node = searchPrefix(word);
+            return node != null && node.isEnd;
+        }
+        
+        public boolean startsWith(String prefix) {
+            return searchPrefix(prefix) != null;
+        }
+        
+        private TrieNode searchPrefix(String word) {
+            TrieNode node = root;
+            for (char c : word.toCharArray()) {
+                int index = c - 'a';
+                if (node.children[index] == null) {
+                    return null;
+                }
+                node = node.children[index];
+            }
+            return node;
+        }
+    }
+    
+17.  线段树模板
+    class SegmentTree {
+        int[] tree;
+        int n;
+        
+        public SegmentTree(int[] nums) {
+            n = nums.length;
+            tree = new int[4 * n];
+            build(nums, 0, 0, n - 1);
+        }
+        
+        private void build(int[] nums, int node, int start, int end) {
+            if (start == end) {
+                tree[node] = nums[start];
+                return;
+            }
+            int mid = start + (end - start) / 2;
+            build(nums, 2 * node + 1, start, mid);
+            build(nums, 2 * node + 2, mid + 1, end);
+            tree[node] = tree[2 * node + 1] + tree[2 * node + 2];
+        }
+        
+        public void update(int index, int val) {
+            update(0, 0, n - 1, index, val);
+        }
+        
+        private void update(int node, int start, int end, int index, int val) {
+            if (start == end) {
+                tree[node] = val;
+                return;
+            }
+            int mid = start + (end - start) / 2;
+            if (index <= mid) {
+                update(2 * node + 1, start, mid, index, val);
+            } else {
+                update(2 * node + 2, mid + 1, end, index, val);
+            }
+            tree[node] = tree[2 * node + 1] + tree[2 * node + 2];
+        }
+        
+        public int query(int left, int right) {
+            return query(0, 0, n - 1, left, right);
+        }
+        
+        private int query(int node, int start, int end, int left, int right) {
+            if (right < start || left > end) {
+                return 0;
+            }
+            if (left <= start && end <= right) {
+                return tree[node];
+            }
+            int mid = start + (end - start) / 2;
+            return query(2 * node + 1, start, mid, left, right) +
+                   query(2 * node + 2, mid + 1, end, left, right);
+        }
+    }
+    
+18.  贪心算法模板（区间调度）
+    int[][] intervals = {{1,3},{2,4},{3,5}};
+    Arrays.sort(intervals, (a, b) -> a[1] - b[1]); // 按结束时间排序
+    
+    int count = 0;
+    int end = Integer.MIN_VALUE;
+    for (int[] interval : intervals) {
+        if (interval[0] >= end) {
+            count++;
+            end = interval[1];
+        }
+    }
+    return count;
+    
+19.  分治算法模板（最大子数组和）
+    int maxSubArray(int[] nums) {
+        return divideAndConquer(nums, 0, nums.length - 1);
+    }
+    
+    int divideAndConquer(int[] nums, int left, int right) {
+        if (left == right) {
+            return nums[left];
+        }
+        
+        int mid = left + (right - left) / 2;
+        int leftMax = divideAndConquer(nums, left, mid);
+        int rightMax = divideAndConquer(nums, mid + 1, right);
+        
+        // 跨越中点的最大和
+        int leftSum = Integer.MIN_VALUE;
+        int sum = 0;
+        for (int i = mid; i >= left; i--) {
+            sum += nums[i];
+            leftSum = Math.max(leftSum, sum);
+        }
+        
+        int rightSum = Integer.MIN_VALUE;
+        sum = 0;
+        for (int i = mid + 1; i <= right; i++) {
+            sum += nums[i];
+            rightSum = Math.max(rightSum, sum);
+        }
+        
+        int crossMax = leftSum + rightSum;
+        return Math.max(crossMax, Math.max(leftMax, rightMax));
+    }
+    
+20.  位运算模板
+    // 判断是否为 2 的幂
+    boolean isPowerOfTwo(int n) {
+        return n > 0 && (n & (n - 1)) == 0;
+    }
+    
+    // 计算二进制中 1 的个数
+    int hammingWeight(int n) {
+        int count = 0;
+        while (n != 0) {
+            n &= (n - 1);
+            count++;
+        }
+        return count;
+    }
+    
+    // 交换两个数（不使用临时变量）
+    void swap(int[] arr, int i, int j) {
+        arr[i] ^= arr[j];
+        arr[j] ^= arr[i];
+        arr[i] ^= arr[j];
+    }
+    
+    // 获取最低位的 1
+    int lowbit(int x) {
+        return x & (-x);
+    }
+    
+    // 判断奇偶性
+    boolean isOdd(int n) {
+        return (n & 1) == 1;
+    }

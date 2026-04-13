@@ -376,5 +376,47 @@
     },
     "log_summary": "[21:11:44] [线程:MainThread] 从链接中提取标题：你一定要知道：优化agent？先放弃SFT/RL ！ - 小红书\n[21:11:44] [线程:MainThread] 添加任务到队列：链接=https://www.xiaohongshu.com/explore/69db57ee000000001a027bb5?xsec_token=ABD-tbLj1ycd4JrOI1B_5xn4R85TGoYWokxuu7m87FGcg=&xsec_source=pc_collect\n[21:11:44] [线程:MainThread] 当前待处理：1，执行中：0\n[21:11:44] [线程:MainThread] 启动队列调度：最大并行 8，当前待处理 1（先进先出，接近 Java 线程池行为）\n[21:11:44] [线程:Thread-2 (_queue_scheduler_loop)] 任务提示词：\n[21:11:44] [线程:Thread-2 (_queue_scheduler_loop)] 飞书文件夹路径：就业知识库/就业技术文档集/AI相关\n[21:11:44] [线程:Thread-2 (_queue_scheduler_loop)] 提交到线程池（并行 1/8）：https://www.xiaohongshu.com/explore/69db57ee000000001a027bb5?xsec_token=ABD-tbLj1ycd4JrOI1B_5xn4R85TGoYWokxuu7m87FGcg=&x...\n[21:11:44] [线程:ThreadPoolExecutor-0_0] 检测到小红书视频链接，使用图文分析流程（内部会检测视频类型）...\n[21:11:44] [线程:ThreadPoolExecutor-0_0] 开始分析小红书链接...\n[21:12:37] [线程:ThreadPoolExecutor-0_0] 小红书内容类型检测结果：xiaohongshu\n[21:12:37] [线程:ThreadPoolExecutor-0_0] ✓ 检测到小红书图文，继续图文分析...\n[21:12:37] [线程:ThreadPoolExecutor-0_0] 成功提取 5 张图片\n[21:12:39] [线程:ThreadPoolExecutor-0_0] 调用火山引擎API进行总结... (尝试 1/3)\n[21:12:39] [线程:ThreadPoolExecutor-0_0]   使用主接入点: ep-20260411182220-jv5qt\n[21:12:42] [线程:ThreadPoolExecutor-0_0]   [主] 接入点失败 [ArkRateLimitError]: Error code: 429 - {'error': {'code': 'SetLimitExceeded', 'message': 'Your account [2103766583] has reached the set inference limit for the [doubao-seed-1-8] model, and the model service has been paused. To continue using this model, please visit the Model Activation page to adjust or close the \"Safe Experience Mode\". Request id: 02177599956160216105250997c3183a3687369088432ad44393b', 'param': '', 'type': 'TooManyRequests'}}, request_id: 20260412211242Z3wURk4BpdArSgzBRwuX\n[21:12:42] [线程:ThreadPoolExecutor-0_0]   使用备接入点: ep-20260320202115-9jqfp\n[21:12:45] [线程:Thread-3 (_ops_dispatch_log_incident)] [运维Agent] 已根据日志ERROR生成维护建议: maintenance_records\\maintenance_log_330f969e6a_20260412_211245.md\n[21:13:33] [线程:ThreadPoolExecutor-0_0] 火山引擎API调用成功（备接入点）\n\n",
     "md_file_path": "maintenance_records\\maintenance_ve_0f9bcc75fe_20260412_211337.md"
+  },
+  {
+    "timestamp": "2026-04-13T15:34:34.005366",
+    "link": "_gui_log_",
+    "task_id": "log_5c5eeca765",
+    "status": "failed",
+    "error_analysis": {
+      "error_type": "LogERROR",
+      "error_message": "  [主] 接入点失败 [ArkRateLimitError]: Error code: 429 - {'error': {'code': 'SetLimitExceeded', 'message': 'Your account [2103766583] has reached the set inference limit for the [doubao-seed-1-8] model, and the model service has been paused. To continue using this model, please visit the Model Activation page to adjust or close the \"Safe Experience Mode\". Request id: 02177606566829278a4d31784aa640fc35612e0bcb9292083d441', 'param': '', 'type': 'TooManyRequests'}}, request_id: 20260413153430MkTnA3HNKm69YU2IgIvU",
+      "root_cause": "自动分析失败: Error code: 429 - {'error': {'code': 'SetLimitExceeded', 'message': 'Your account [2103766583] has reached the set inference limit for the [doubao-seed-1-8] model, and the model service has been paused. To continue using this model, please visit the Model Activation page to adjust or close the \"Safe Experience Mode\". Request id: 021776065671848e3c0010419774ef230e4bef6206f93665efc0f', 'param': '', 'type': 'TooManyRequests'}}, request_id: 20260413153433Wo6sahyEvXMF1ekludAJ",
+      "business_impact": "需要人工评估",
+      "code_level_fix": "请查看原始错误信息",
+      "business_level_fix": "请评估业务影响",
+      "priority": "medium",
+      "estimated_fix_time": "未知",
+      "requires_downtime": false,
+      "api_failure_suspected": false,
+      "api_config_recommendation": ""
+    },
+    "log_summary": "[15:34:07] [线程:ThreadPoolExecutor-0_0] 视频下载耗时: 7.30秒\n[15:34:07] [线程:ThreadPoolExecutor-0_0] ✓ 视频下载成功：F:\\java\\AIOPS\\SuperBizAgent-release-2026-01-02\\demo_wendanghua\\SuperBizAgent-AgentFramework\\src\\agent\\videos\\1776065639967-216-04-13-69.mp4\n[15:34:07] [线程:ThreadPoolExecutor-0_0] 使用 Whisper 本地模型进行语音转文字...\n[15:34:08] [线程:ThreadPoolExecutor-0_0] 初始化 Whisper 实例池：4 路独立模型（环境变量 WHISPER_POOL_SIZE 可改；默认与线程池协调）\n[15:34:08] [线程:ThreadPoolExecutor-0_0] Whisper 池加载 1/4（tiny）...\n[15:34:10] [线程:ThreadPoolExecutor-0_0] Whisper 池加载 2/4（tiny）...\n[15:34:10] [线程:ThreadPoolExecutor-0_0] Whisper 池加载 3/4（tiny）...\n[15:34:11] [线程:ThreadPoolExecutor-0_0] Whisper 池加载 4/4（tiny）...\n[15:34:12] [线程:ThreadPoolExecutor-0_0] 从 Whisper 池取得槽位 w0（池大小=4，可并行）\n[15:34:12] [线程:ThreadPoolExecutor-0_0] 开始转写...\n[15:34:12] [线程:ThreadPoolExecutor-0_0] 使用优化参数进行转写…（尝试 1/3）\n[15:34:24] [线程:ThreadPoolExecutor-0_0] 转写耗时: 12.57秒\n[15:34:24] [线程:ThreadPoolExecutor-0_0] 语音转文字完成！\n[15:34:24] [线程:ThreadPoolExecutor-0_0] 转写结果: 嗯,我还能检称没写了,熟悉多A陈子的写作。那你能聊一聊A陈子具体是怎么样的写作吗?有些後依賴的指令比如做一份海鴨報告會猜成減手數據到整理信息到抓寫證文在到隔思教院同時明確每個步驟的俗路輸出和驗測標準其...\n[15:34:25] [线程:ThreadPoolExecutor-0_0] 使用火山引擎API进行文本总结...\n[15:34:27] [线程:ThreadPoolExecutor-0_0] 调用火山引擎API进行总结... (尝试 1/3)\n[15:34:27] [线程:ThreadPoolExecutor-0_0]   使用主接入点: ep-20260411182220-jv5qt\n[15:34:30] [线程:ThreadPoolExecutor-0_0]   [主] 接入点失败 [ArkRateLimitError]: Error code: 429 - {'error': {'code': 'SetLimitExceeded', 'message': 'Your account [2103766583] has reached the set inference limit for the [doubao-seed-1-8] model, and the model service has been paused. To continue using this model, please visit the Model Activation page to adjust or close the \"Safe Experience Mode\". Request id: 02177606566829278a4d31784aa640fc35612e0bcb9292083d441', 'param': '', 'type': 'TooManyRequests'}}, request_id: 20260413153430MkTnA3HNKm69YU2IgIvU\n\n",
+    "md_file_path": "maintenance_records\\maintenance_log_5c5eeca765_20260413_153434.md"
+  },
+  {
+    "timestamp": "2026-04-13T15:35:04.406071",
+    "link": "_volcengine_",
+    "task_id": "ve_ec89b793bf",
+    "status": "failed",
+    "error_analysis": {
+      "error_type": "VolcenginePrimaryFailedBackupOk",
+      "error_message": "火山主接入点失败但备用成功。主: ep-20260411182220-jv5qt 错误: ArkRateLimitError: Error code: 429 - {'error': {'code': 'SetLimitExceeded', 'message': 'Your account [2103766583] has reached the set inference limit for the [doubao-seed-1-8] model, and the model service has been paused. To continue using this model, please visit the Model Activation page to adjust or close the \"Safe Experience Mode\". Request id: 02177606566829278a4d31784aa640fc35612e0bcb9292083d441', 'param': '', 'type': 'TooManyRequests'}}, request_id: 20260413153430MkTnA3HNKm69YU2IgIvU；已用备: ep-20260320202115-9jqfp。建议：检查控制台 Safe Experience/限额，或把 config.json 中 ai_chat_model 与 ai_chat_model_backup 对调。",
+      "root_cause": "自动分析失败: Error code: 429 - {'error': {'code': 'SetLimitExceeded', 'message': 'Your account [2103766583] has reached the set inference limit for the [doubao-seed-1-8] model, and the model service has been paused. To continue using this model, please visit the Model Activation page to adjust or close the \"Safe Experience Mode\". Request id: 02177606570226760d9d1fce08649db5f71e61508d2f87f625242', 'param': '', 'type': 'TooManyRequests'}}, request_id: 20260413153504pYssU4F1fyxwYuFKpMV5",
+      "business_impact": "需要人工评估",
+      "code_level_fix": "请查看原始错误信息",
+      "business_level_fix": "请评估业务影响",
+      "priority": "medium",
+      "estimated_fix_time": "未知",
+      "requires_downtime": false,
+      "api_failure_suspected": false,
+      "api_config_recommendation": ""
+    },
+    "log_summary": "[15:34:08] [线程:ThreadPoolExecutor-0_0] 初始化 Whisper 实例池：4 路独立模型（环境变量 WHISPER_POOL_SIZE 可改；默认与线程池协调）\n[15:34:08] [线程:ThreadPoolExecutor-0_0] Whisper 池加载 1/4（tiny）...\n[15:34:10] [线程:ThreadPoolExecutor-0_0] Whisper 池加载 2/4（tiny）...\n[15:34:10] [线程:ThreadPoolExecutor-0_0] Whisper 池加载 3/4（tiny）...\n[15:34:11] [线程:ThreadPoolExecutor-0_0] Whisper 池加载 4/4（tiny）...\n[15:34:12] [线程:ThreadPoolExecutor-0_0] 从 Whisper 池取得槽位 w0（池大小=4，可并行）\n[15:34:12] [线程:ThreadPoolExecutor-0_0] 开始转写...\n[15:34:12] [线程:ThreadPoolExecutor-0_0] 使用优化参数进行转写…（尝试 1/3）\n[15:34:24] [线程:ThreadPoolExecutor-0_0] 转写耗时: 12.57秒\n[15:34:24] [线程:ThreadPoolExecutor-0_0] 语音转文字完成！\n[15:34:24] [线程:ThreadPoolExecutor-0_0] 转写结果: 嗯,我还能检称没写了,熟悉多A陈子的写作。那你能聊一聊A陈子具体是怎么样的写作吗?有些後依賴的指令比如做一份海鴨報告會猜成減手數據到整理信息到抓寫證文在到隔思教院同時明確每個步驟的俗路輸出和驗測標準其...\n[15:34:25] [线程:ThreadPoolExecutor-0_0] 使用火山引擎API进行文本总结...\n[15:34:27] [线程:ThreadPoolExecutor-0_0] 调用火山引擎API进行总结... (尝试 1/3)\n[15:34:27] [线程:ThreadPoolExecutor-0_0]   使用主接入点: ep-20260411182220-jv5qt\n[15:34:30] [线程:ThreadPoolExecutor-0_0]   [主] 接入点失败 [ArkRateLimitError]: Error code: 429 - {'error': {'code': 'SetLimitExceeded', 'message': 'Your account [2103766583] has reached the set inference limit for the [doubao-seed-1-8] model, and the model service has been paused. To continue using this model, please visit the Model Activation page to adjust or close the \"Safe Experience Mode\". Request id: 02177606566829278a4d31784aa640fc35612e0bcb9292083d441', 'param': '', 'type': 'TooManyRequests'}}, request_id: 20260413153430MkTnA3HNKm69YU2IgIvU\n[15:34:30] [线程:ThreadPoolExecutor-0_0]   使用备接入点: ep-20260320202115-9jqfp\n[15:34:34] [线程:Thread-11 (_ops_dispatch_log_incident)] [运维Agent] 已根据日志ERROR生成维护建议: maintenance_records\\maintenance_log_5c5eeca765_20260413_153434.md\n[15:35:01] [线程:ThreadPoolExecutor-0_0] 火山引擎API调用成功（备接入点）\n\n",
+    "md_file_path": "maintenance_records\\maintenance_ve_ec89b793bf_20260413_153504.md"
   }
 ]
