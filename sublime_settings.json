@@ -1,0 +1,63 @@
+{
+    // ===== 防止文件丢失的核心配置 =====
+    
+    // 1. 禁用 hot_exit，强制保存提示
+    // 关闭窗口时必须明确保存，不依赖 session 恢复
+    "hot_exit": false,
+    
+    // 2. 记住打开的文件（配合 hot_exit: false 使用）
+    // 重启后自动打开之前的文件，但不恢复未保存内容
+    "remember_open_files": true,
+    
+    // 3. 退出时提示保存
+    // 关闭窗口时询问是否保存修改
+    "prompt_on_unsaved_change": true,
+    
+    // 4. 关闭窗口时不提示（由 prompt_on_unsaved_change 控制）
+    // 这个设置只在用户设置中有效
+    "exit_prompt": false,
+    
+    // ===== 自动备份配置 =====
+    
+    // 5. 保存前创建备份文件（filename.ext~）
+    // 每次保存前生成 .bak 备份，防止保存出错
+    "backup_before_save": true,
+    
+    // 6. 原子保存（防止写入中断损坏文件）
+    // 先写入临时文件，成功后再替换原文件
+    "atomic_save": true,
+    
+    // 7. 自动保存（可选）
+    // 失去焦点时自动保存，防止忘记保存
+    "auto_save": true,
+    "auto_save_delay": 3000,
+    "auto_save_on_focus_lost": true,
+    
+    // ===== 会话和恢复配置 =====
+    
+    // 8. 自动保存会话（防止 session 丢失）
+    "save_session": true,
+    
+    // 9. 会话自动保存间隔（秒）
+    "session_save_period": 300,
+    
+    // ===== 其他优化配置 =====
+    
+    // 10. 显示全路径在标题栏
+    "show_full_path": true,
+    
+    // 11. 侧边栏显示打开的文件
+    "show_open_files": true,
+    
+    // 12. 关闭最后一个文件时关闭窗口
+    "close_windows_when_empty": false,
+    
+    // 13. 恢复视图状态（光标位置、滚动位置）
+    "restore_view_state": true,
+    
+    // 14. 预览文件时不在标题栏显示修改标记
+    "preview_on_click": true,
+    
+    // 15. 文件被外部修改时提示
+    "prompt_on_file_reload": true
+}

@@ -1,0 +1,8 @@
+这是测试文件，用于验证 Sublime Text 3 的备份功能。
+
+测试内容：
+1. 备份文件功能 (backup_before_save)
+2. 自动保存功能 (auto_save)
+3. 原子保存功能 (atomic_save)
+
+创建时间：2026-04-14

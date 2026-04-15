@@ -1,4 +1,4 @@
-# SuperBizAgent - AI Agent Framework
+# 多模态文档化助手（Multimodal Doc Assistant）
 
 ## 标准Agent工程框架版本
 

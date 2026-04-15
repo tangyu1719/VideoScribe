@@ -378,6 +378,35 @@ def build_cursor_like_tools(base_dir: str) -> List["Tool"]:
             op = str(Path(root) / f"playwright_{int(time.time())}.png")
         return playwright_tool_impl(action=action, url=url, out_path=op)
 
+    # ===== 统一返回结构别名（便于 Agent 侧标准化消费） =====
+    def _read_file(path: str, start_line: int = 1, end_line: int = 200) -> str:
+        try:
+            data = _read(path=path, start_line=start_line, end_line=end_line)
+            return json.dumps({"ok": True, "data": data, "error": ""}, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"ok": False, "data": "", "error": f"{type(e).__name__}: {e}"}, ensure_ascii=False)
+
+    def _write_file(path: str, content: str, mode: str = "overwrite") -> str:
+        try:
+            data = _write(path=path, content=content, mode=mode)
+            return json.dumps({"ok": True, "data": data, "error": ""}, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"ok": False, "data": "", "error": f"{type(e).__name__}: {e}"}, ensure_ascii=False)
+
+    def _replace_text(path: str, old: str, new: str, count: int = 1) -> str:
+        try:
+            data = _replace(path=path, old=old, new=new, count=count)
+            return json.dumps({"ok": True, "data": data, "error": ""}, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"ok": False, "data": "", "error": f"{type(e).__name__}: {e}"}, ensure_ascii=False)
+
+    def _terminal_exec(command: str, timeout_s: int = 30) -> str:
+        try:
+            data = _terminal(command=command, timeout_s=timeout_s)
+            return json.dumps({"ok": True, "data": data, "error": ""}, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"ok": False, "data": "", "error": f"{type(e).__name__}: {e}"}, ensure_ascii=False)
+
     return [
         StructuredTool.from_function(
             name="search",
@@ -423,6 +452,26 @@ def build_cursor_like_tools(base_dir: str) -> List["Tool"]:
             name="web_search",
             description="联网搜索（无需API Key，尽力解析）。参数：query, max_results(可选)",
             func=_web_search,
+        ),
+        StructuredTool.from_function(
+            name="read_file",
+            description="读取项目文件内容（标准返回结构）。参数：path, start_line(可选), end_line(可选)",
+            func=_read_file,
+        ),
+        StructuredTool.from_function(
+            name="write_file",
+            description="写入项目文件（标准返回结构）。参数：path, content, mode=overwrite|append",
+            func=_write_file,
+        ),
+        StructuredTool.from_function(
+            name="replace_text",
+            description="替换文件文本（标准返回结构）。参数：path, old, new, count(可选)",
+            func=_replace_text,
+        ),
+        StructuredTool.from_function(
+            name="terminal_exec",
+            description="执行终端命令（标准返回结构）。参数：command, timeout_s(可选)",
+            func=_terminal_exec,
         ),
     ]
 

@@ -52,6 +52,7 @@ import json
 import os
 import time
 import hashlib
+import re
 from datetime import datetime
 import multiprocessing
 import asyncio
@@ -75,6 +76,18 @@ try:
     LANGCHAIN_STANDARD_AVAILABLE = True
 except Exception:
     LANGCHAIN_STANDARD_AVAILABLE = False
+
+try:
+    from task_runtime.node_center_gui import open_task_node_center
+    TASK_NODE_CENTER_AVAILABLE = True
+except Exception:
+    TASK_NODE_CENTER_AVAILABLE = False
+
+try:
+    from task_runtime.workflow_designer_gui import open_workflow_designer
+    WORKFLOW_DESIGNER_AVAILABLE = True
+except Exception:
+    WORKFLOW_DESIGNER_AVAILABLE = False
 
 # RAG知识库集成 - 使用快速版kb_manager_fast（BGE-Large 1024维）
 try:
@@ -154,7 +167,20 @@ except ImportError:
     MULTIMODAL_AVAILABLE = False
     print("警告：多模态文档处理模块未安装")
 
-APP_TITLE = "视频转文字处理工具 (GUI)"
+try:
+    from mineru_processor import MinerUProcessor
+    MINERU_PROCESSOR_AVAILABLE = True
+except Exception:
+    MINERU_PROCESSOR_AVAILABLE = False
+
+APP_TITLE = "多模态文档化助手"
+APP_VERSION = "v0.9.0-local-orchestration"
+APP_CHANGELOG = [
+    "新增：左侧竖直导航与任务编排母菜单。",
+    "新增：本地任务节点中心与流程设计器（支持 Agent 节点配置）。",
+    "优化：首屏窗口按屏幕尺寸自适应，减少按钮被遮挡问题。",
+    "优化：设置项集中到“设置”母菜单，配置数据源保持统一。",
+]
 
 # 主窗口视觉主题：浅灰底、细线白卡片、低饱和强调色（Tkinter 可维护范围内尽量「轻」）
 UI_BG = "#f4f4f5"
@@ -196,8 +222,9 @@ VOLCENGINE_API_URL = "https://ark.cn-beijing.volces.com/api/v3"
 # AI 对话专用 API 配置（正确的API Key）
 AI_CHAT_API_KEY = "ebc08852-e7ae-4e64-b71c-79cfcce9d251"
 AI_CHAT_API_URL = "https://ark.cn-beijing.volces.com/api/v3"
-AI_CHAT_MODEL = "ep-20260411182220-jv5qt"  # Doubao-Seed-2.0-mini 主接入点
-AI_CHAT_MODEL_BACKUP = "ep-20260320202115-9jqfp"  # Doubao-Seed-2.0-mini 备用接入点
+# 主备对调：优先使用更稳定的接入点
+AI_CHAT_MODEL = "ep-20260320202115-9jqfp"  # Doubao-Seed-2.0-mini 主接入点（原备用）
+AI_CHAT_MODEL_BACKUP = "ep-20260411182220-jv5qt"  # Doubao-Seed-2.0-mini 备用接入点（疑似受限/过期）
 
 # 百度 OCR API 配置（与链接分析保持一致）
 BAIDU_OCR_APP_ID = '122094788'
@@ -213,8 +240,14 @@ DEFAULT_CONFIG = {
     "file_naming_rule": "总记录序号-月-日-文档名称（文档名称从AI生成的第一行标题中提取）",  # 文件名命名规则
     "output_template": "# {platform}视频分析\n\n## 视频信息\n- 分析时间: {datetime}\n- 原始链接: {link}\n- 平台: {platform}\n\n## 语音转文字内容\n{transcript}\n\n## AI分析摘要\n{summary}",
     "user_prompt": "",
-    "ai_chat_model": "ep-20260411182220-jv5qt",
-    "ai_chat_model_backup": "ep-20260320202115-9jqfp",
+    "ai_chat_model": "ep-20260320202115-9jqfp",
+    "ai_chat_model_backup": "ep-20260411182220-jv5qt",
+    # 接入点状态（用于标记过期/暂停/可用）
+    # 可选值建议：active | paused | deprecated | expired
+    "ai_chat_model_status": {
+        "ep-20260320202115-9jqfp": "active",
+        "ep-20260411182220-jv5qt": "paused"
+    },
     # 飞书：同步开关持久化在 config.json；凭证与默认目录在「AI配置」中填写
     "feishu_sync_enabled": False,
     "feishu_app_id": "",
@@ -232,6 +265,14 @@ DEFAULT_CONFIG = {
     "langchain_standard_enabled": True,
     "llm_provider": "ark",
     "llm_base_url": AI_CHAT_API_URL,
+    # 本地任务编排（Dify 思路轻量本地化）：默认关闭，不影响固定 workflow
+    "local_workflow_mode_enabled": False,
+    "local_workflow_node_defaults": {},
+    "local_workflow_node_enabled": {},
+    "local_workflow_definitions": {},
+    "workflow_scheduler_enabled": False,
+    "workflow_scheduler_interval_min": 30,
+    "workflow_scheduler_workflow_id": "",
 }
 
 for d in (VIDEO_DIR, OUTPUT_DIR):
@@ -318,7 +359,15 @@ class DoubaoChatPage(tk.Frame):
         "model_backup": AI_CHAT_MODEL_BACKUP
     }
 
-    def __init__(self, parent, rag_kb=None, rag_tool=None, **kwargs):
+    def __init__(
+        self,
+        parent,
+        rag_kb=None,
+        rag_tool=None,
+        workflow_node_tools_provider=None,
+        workflow_node_executor=None,
+        **kwargs,
+    ):
         super().__init__(parent, bg="#f5f5f5", **kwargs)
         self.sessions = []
         self.current_session_id = None
@@ -327,6 +376,8 @@ class DoubaoChatPage(tk.Frame):
         self.ai_config = self._load_ai_config()
         self._rag_kb = rag_kb  # 接收传入的RAG知识库
         self._rag_tool = rag_tool  # 接收传入的RAG工具
+        self._workflow_node_tools_provider = workflow_node_tools_provider
+        self._workflow_node_executor = workflow_node_executor
         self._cursor_tools = build_cursor_like_tools(BASE_DIR) if CURSOR_TOOLS_AVAILABLE else []
         self._standard_runtime = None
         self._init_standard_langchain_runtime()
@@ -351,13 +402,51 @@ class DoubaoChatPage(tk.Frame):
                 self._standard_runtime = None
                 return
 
+            # 统一数据源：使用 AI 配置中心（DB + runtime overlay）作为 LangChain 模型配置来源
+            llm_primary = ""
+            llm_backups = []
+            llm_status = CONFIG.get("ai_chat_model_status") if isinstance(CONFIG.get("ai_chat_model_status"), dict) else {}
+            api_key = CONFIG.get("volcengine_api_key") or self.ai_config.get("api_key", AI_CHAT_API_KEY)
+            base_url = CONFIG.get("volcengine_base_url") or CONFIG.get("llm_base_url") or AI_CHAT_API_URL
+            temp = float(self.ai_config.get("temperature", 0.7))
+            max_tok = int(self.ai_config.get("max_tokens", 4096))
+
+            if AI_API_CONFIG_AVAILABLE:
+                try:
+                    mgr = AIAPIConfigManager(runtime_overlay=CONFIG.copy())
+                    cfg_db = mgr.get_config()
+                    llm_primary = (cfg_db.get("endpoint_id") or "").strip()
+                    # 过滤：只把 active 的备选接入点传入 LangChain runtime
+                    for b in (cfg_db.get("backup_configs") or []):
+                        ep = (b or {}).get("endpoint_id") or ""
+                        ep = ep.strip()
+                        if not ep:
+                            continue
+                        st = (llm_status.get(ep) or "active").strip().lower()
+                        if st == "active":
+                            llm_backups.append(ep)
+                    # key/base_url 优先 DB 配置
+                    api_key = (cfg_db.get("api_key") or api_key).strip()
+                    base_url = (cfg_db.get("base_url") or base_url).strip()
+                except Exception as e:
+                    self._log_to_file(f"AI配置中心读取失败，回退 config.json: {e}")
+
+            if not llm_primary:
+                llm_primary = (CONFIG.get("ai_chat_model") or AI_CHAT_MODEL).strip()
+            if not llm_backups:
+                bk = (CONFIG.get("ai_chat_model_backup") or AI_CHAT_MODEL_BACKUP).strip()
+                if bk and (llm_status.get(bk, "active").strip().lower() == "active"):
+                    llm_backups = [bk]
+
             cfg = LLMEndpointConfig(
                 provider=str(CONFIG.get("llm_provider", "ark")),
-                api_key=self.ai_config.get("api_key", AI_CHAT_API_KEY),
-                base_url=str(CONFIG.get("llm_base_url", AI_CHAT_API_URL)),
-                model=self.ai_config.get("model", AI_CHAT_MODEL),
-                temperature=float(self.ai_config.get("temperature", 0.7)),
-                max_tokens=int(self.ai_config.get("max_tokens", 4096)),
+                api_key=str(api_key),
+                base_url=str(base_url),
+                model=str(llm_primary),
+                backup_models=list(llm_backups),
+                endpoint_status=dict(llm_status),
+                temperature=temp,
+                max_tokens=max_tok,
             )
 
             self._standard_runtime = StandardLangChainRuntime(
@@ -366,6 +455,7 @@ class DoubaoChatPage(tk.Frame):
                 rag_tool=self._rag_tool,
                 rag_kb=self._rag_kb,
                 logger=self._log_to_file,
+                extra_tools=self._build_workflow_langchain_tools(),
             )
             if self._standard_runtime and self._standard_runtime.ready:
                 self._log_to_file("标准 LangChain 运行时已启用")
@@ -374,6 +464,150 @@ class DoubaoChatPage(tk.Frame):
         except Exception as e:
             self._standard_runtime = None
             self._log_to_file(f"标准 LangChain 运行时初始化失败: {e}")
+
+    def _build_workflow_langchain_tools(self):
+        """将任务节点封装为 LangChain 可调用工具，供 AI 自动执行。"""
+        if not self._workflow_node_executor:
+            return []
+        try:
+            from langchain.tools import StructuredTool
+        except Exception:
+            return []
+
+        def list_workflow_nodes() -> str:
+            provider = self._workflow_node_tools_provider
+            if not callable(provider):
+                return json.dumps({"nodes": []}, ensure_ascii=False)
+            try:
+                node_map = provider() or {}
+                return json.dumps({"nodes": sorted(list(node_map.keys()))}, ensure_ascii=False)
+            except Exception as e:
+                return json.dumps({"error": f"list_workflow_nodes failed: {e}"}, ensure_ascii=False)
+
+        def run_workflow_node_tool(node_id: str, node_config_json: str = "{}", context_json: str = "{}") -> str:
+            try:
+                node_cfg = json.loads(node_config_json) if node_config_json else {}
+                ctx = json.loads(context_json) if context_json else {}
+                if not isinstance(node_cfg, dict):
+                    node_cfg = {}
+                if not isinstance(ctx, dict):
+                    ctx = {}
+                ctx.setdefault("link", "")
+                ctx.setdefault("input_mode", "plain_text")
+                ctx.setdefault("input_file", "")
+                ctx.setdefault("input_text", "")
+                ctx.setdefault("user_prompt", "")
+                ctx.setdefault("feishu_folder_path", None)
+                ctx.setdefault("previous_output", {})
+                ctx.setdefault("result_data", {})
+                out = self._workflow_node_executor((node_id or "").strip(), node_cfg, ctx)
+                return json.dumps({"ok": True, "result": out}, ensure_ascii=False)
+            except Exception as e:
+                return json.dumps({"ok": False, "error": f"run_workflow_node failed: {e}"}, ensure_ascii=False)
+
+        def _run_node(node_id: str, node_config_json: str = "{}", context_json: str = "{}") -> str:
+            return run_workflow_node_tool(node_id=node_id, node_config_json=node_config_json, context_json=context_json)
+
+        def multimodal_to_text(file_path: str = "", raw_text: str = "") -> str:
+            """
+            多模态转文本（页面能力）：
+            - file_path 有值时走 multimodal_file
+            - 否则走 plain_text
+            """
+            ctx = {
+                "input_mode": "multimodal_file" if (file_path or "").strip() else "plain_text",
+                "input_file": (file_path or "").strip(),
+                "input_text": raw_text or "",
+                "result_data": {},
+            }
+            return _run_node("multimodal_to_text", node_config_json="{}", context_json=json.dumps(ctx, ensure_ascii=False))
+
+        def link_multimodal_pipeline(link: str, options_json: str = "{}") -> str:
+            """
+            规则路由链接多模态工具（不经LLM控路由）：
+            识别源头 -> 规范化 -> 路由 -> 文档化。
+            """
+            opts = {}
+            try:
+                opts = json.loads(options_json or "{}")
+                if not isinstance(opts, dict):
+                    opts = {}
+            except Exception:
+                opts = {}
+            ctx = {
+                "link": (link or "").strip(),
+                "input_mode": "video_link",
+                "user_prompt": opts.get("user_prompt", ""),
+                "feishu_folder_path": opts.get("feishu_folder_path"),
+                "result_data": {},
+            }
+            return _run_node("link_multimodal_pipeline", node_config_json=json.dumps(opts, ensure_ascii=False), context_json=json.dumps(ctx, ensure_ascii=False))
+
+        def video_link_downloader_strict(link: str) -> str:
+            """
+            严格视频下载工具：
+            非视频链接返回 rejected，不执行下载。
+            """
+            ctx = {
+                "link": (link or "").strip(),
+                "input_mode": "video_link",
+                "result_data": {},
+            }
+            return _run_node("download_video_strict", node_config_json=json.dumps({"link": link}, ensure_ascii=False), context_json=json.dumps(ctx, ensure_ascii=False))
+
+        def template_controlled_doc_generation(raw_text: str, template_content: str = "", prompt_overrides: str = "") -> str:
+            cfg = {
+                "raw_text": raw_text or "",
+                "template": template_content or "",
+                "prompt": prompt_overrides or "",
+            }
+            return _run_node("template_controlled_doc_generation", node_config_json=json.dumps(cfg, ensure_ascii=False), context_json=json.dumps({"input_text": raw_text or "", "result_data": {}}, ensure_ascii=False))
+
+        def image_ocr_to_text(image_path: str, lang: str = "chi_sim+eng") -> str:
+            cfg = {"image_path": image_path or "", "lang": lang}
+            return _run_node("image_ocr_to_text", node_config_json=json.dumps(cfg, ensure_ascii=False), context_json=json.dumps({"input_file": image_path or "", "result_data": {}}, ensure_ascii=False))
+
+        return [
+            StructuredTool.from_function(
+                name="list_workflow_nodes",
+                description="列出当前可执行的工作流节点ID，便于AI按节点能力进行调度与编排。",
+                func=list_workflow_nodes,
+            ),
+            StructuredTool.from_function(
+                name="run_workflow_node",
+                description=(
+                    "执行指定的工作流节点。参数：node_id, node_config_json(可选JSON字符串), "
+                    "context_json(可选JSON字符串，含 link/input_mode/input_file/input_text/user_prompt/"
+                    "feishu_folder_path/previous_output/result_data 等上下文)。"
+                ),
+                func=run_workflow_node_tool,
+            ),
+            StructuredTool.from_function(
+                name="multimodal_to_text",
+                description="多模态转文本：输入 file_path 或 raw_text，输出标准文本与元数据。",
+                func=multimodal_to_text,
+            ),
+            StructuredTool.from_function(
+                name="link_multimodal_pipeline",
+                description="链接识别+规则路由+规范化+文档化（不经LLM控路由）。参数：link, options_json(可选)。",
+                func=link_multimodal_pipeline,
+            ),
+            StructuredTool.from_function(
+                name="video_link_downloader_strict",
+                description="严格视频下载工具：仅处理视频链接，非视频返回 rejected。参数：link。",
+                func=video_link_downloader_strict,
+            ),
+            StructuredTool.from_function(
+                name="template_controlled_doc_generation",
+                description="模板控制文档生成（LLM）：raw_text + template/prompt 生成结构化 markdown。",
+                func=template_controlled_doc_generation,
+            ),
+            StructuredTool.from_function(
+                name="image_ocr_to_text",
+                description="OCR 图片转文本：输入 image_path，输出文本、引擎与结果数据。",
+                func=image_ocr_to_text,
+            ),
+        ]
 
     def _load_ai_config(self):
         """加载AI配置"""
@@ -475,23 +709,71 @@ class DoubaoChatPage(tk.Frame):
         separator = tk.Frame(sidebar, bg="#e8e8e8", height=1)
         separator.pack(fill=tk.X, padx=15)
 
-        # 知识库管理区域（添加文件/文件夹按钮）
+        # AI问答子菜单：AI助手 / 知识库
+        submenu_frame = tk.Frame(sidebar, bg="#ffffff")
+        submenu_frame.pack(fill=tk.X, padx=15, pady=(8, 4))
+        self.chat_submenu_var = tk.StringVar(value="assistant")
+
+        self.chat_submenu_assistant_btn = tk.Label(
+            submenu_frame,
+            text="🗨 AI助手",
+            font=("微软雅黑", 10, "bold"),
+            bg="#eaf1ff",
+            fg="#3558d6",
+            cursor="hand2",
+            padx=8,
+            pady=5,
+        )
+        self.chat_submenu_assistant_btn.pack(side=tk.LEFT)
+        self.chat_submenu_assistant_btn.bind("<Button-1>", lambda e: self._switch_chat_submenu("assistant"))
+
+        self.chat_submenu_kb_btn = tk.Label(
+            submenu_frame,
+            text="📚 知识库",
+            font=("微软雅黑", 10),
+            bg="#ffffff",
+            fg="#666666",
+            cursor="hand2",
+            padx=8,
+            pady=5,
+        )
+        self.chat_submenu_kb_btn.pack(side=tk.LEFT, padx=(8, 0))
+        self.chat_submenu_kb_btn.bind("<Button-1>", lambda e: self._switch_chat_submenu("kb"))
+
+        # AI助手子页：会话列表
+        self.assistant_subpage = tk.Frame(sidebar, bg="#ffffff")
+        self.assistant_subpage.pack(fill=tk.BOTH, expand=True, padx=10, pady=8)
+
+        self.session_canvas = tk.Canvas(self.assistant_subpage, bg="#ffffff", highlightthickness=0)
+        self.session_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        scrollbar = ttk.Scrollbar(self.assistant_subpage, orient="vertical", command=self.session_canvas.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.session_canvas.configure(yscrollcommand=scrollbar.set)
+
+        self.session_list_frame = tk.Frame(self.session_canvas, bg="#ffffff")
+        self.session_canvas.create_window((0, 0), window=self.session_list_frame, anchor="nw", width=220)
+
+        self.session_list_frame.bind("<Configure>", lambda e: self.session_canvas.configure(
+            scrollregion=self.session_canvas.bbox("all")))
+
+        # 知识库子页
+        self.kb_subpage = tk.Frame(sidebar, bg="#ffffff")
         if RAG_AVAILABLE:
-            kb_frame = tk.Frame(sidebar, bg="#ffffff", padx=15, pady=10)
-            kb_frame.pack(fill=tk.X)
-            
+            kb_frame = tk.Frame(self.kb_subpage, bg="#ffffff", padx=10, pady=8)
+            kb_frame.pack(fill=tk.BOTH, expand=True)
+
             tk.Label(
                 kb_frame,
-                text="📚 知识库",
+                text="知识库管理",
                 font=("微软雅黑", 11, "bold"),
                 bg="#ffffff",
                 fg="#333333"
-            ).pack(anchor="w", pady=(0, 5))
-            
+            ).pack(anchor="w", pady=(0, 8))
+
             btn_frame = tk.Frame(kb_frame, bg="#ffffff")
             btn_frame.pack(fill=tk.X)
-            
-            # 添加文件按钮
+
             add_file_btn = tk.Button(
                 btn_frame,
                 text="📄 添加文件",
@@ -503,8 +785,7 @@ class DoubaoChatPage(tk.Frame):
                 cursor="hand2"
             )
             add_file_btn.pack(side=tk.LEFT, padx=(0, 5))
-            
-            # 添加文件夹按钮
+
             add_folder_btn = tk.Button(
                 btn_frame,
                 text="📁 添加文件夹",
@@ -515,9 +796,8 @@ class DoubaoChatPage(tk.Frame):
                 relief=tk.FLAT,
                 cursor="hand2"
             )
-            add_folder_btn.pack(side=tk.LEFT)
-            
-            # 重建索引按钮
+            add_folder_btn.pack(side=tk.LEFT, padx=(0, 5))
+
             rebuild_btn = tk.Button(
                 btn_frame,
                 text="🔄 重建索引",
@@ -528,29 +808,29 @@ class DoubaoChatPage(tk.Frame):
                 relief=tk.FLAT,
                 cursor="hand2"
             )
-            rebuild_btn.pack(side=tk.LEFT, padx=(5, 0))
-            
-            # 分隔线
-            separator2 = tk.Frame(sidebar, bg="#e8e8e8", height=1)
-            separator2.pack(fill=tk.X, padx=15)
+            rebuild_btn.pack(side=tk.LEFT)
 
-        # 会话列表区域
-        list_frame = tk.Frame(sidebar, bg="#ffffff")
-        list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            tk.Button(
+                kb_frame,
+                text="打开知识库管理窗口",
+                command=self._open_rag_manager,
+                bg="#ffffff",
+                fg="#4e6ef2",
+                font=("微软雅黑", 9),
+                relief=tk.FLAT,
+                cursor="hand2"
+            ).pack(anchor="w", pady=(10, 0))
+        else:
+            tk.Label(
+                self.kb_subpage,
+                text="知识库模块未安装",
+                font=("微软雅黑", 10),
+                bg="#ffffff",
+                fg="#999999"
+            ).pack(anchor="w", padx=12, pady=12)
 
-        # 会话列表Canvas
-        self.session_canvas = tk.Canvas(list_frame, bg="#ffffff", highlightthickness=0)
-        self.session_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.session_canvas.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.session_canvas.configure(yscrollcommand=scrollbar.set)
-
-        self.session_list_frame = tk.Frame(self.session_canvas, bg="#ffffff")
-        self.session_canvas.create_window((0, 0), window=self.session_list_frame, anchor="nw", width=220)
-
-        self.session_list_frame.bind("<Configure>", lambda e: self.session_canvas.configure(
-            scrollregion=self.session_canvas.bbox("all")))
+        # 初始显示 AI助手子页
+        self._switch_chat_submenu("assistant")
 
         # 刷新会话列表
         self._refresh_session_list()
@@ -569,20 +849,63 @@ class DoubaoChatPage(tk.Frame):
         self.msg_canvas = tk.Canvas(msg_frame, bg="#f5f5f5", highlightthickness=0)
         self.msg_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        msg_scrollbar = ttk.Scrollbar(msg_frame, orient="vertical", command=self.msg_canvas.yview)
+        msg_scrollbar = ttk.Scrollbar(msg_frame, orient="vertical", command=self._on_msg_scrollbar)
         msg_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.msg_canvas.configure(yscrollcommand=msg_scrollbar.set)
+        self.msg_canvas.configure(yscrollcommand=lambda a, b: self._on_msg_canvas_yscroll(msg_scrollbar, a, b))
 
         self.messages_frame = tk.Frame(self.msg_canvas, bg="#f5f5f5")
         self.msg_canvas.create_window((0, 0), window=self.messages_frame, anchor="nw", width=900)
 
         self.messages_frame.bind("<Configure>", lambda e: self.msg_canvas.configure(
             scrollregion=self.msg_canvas.bbox("all")))
+        self.messages_frame.bind("<Configure>", lambda e: self._update_jump_bottom_visibility())
+
+        # 上滑后显示的一键到底按钮
+        self.jump_bottom_btn = tk.Label(
+            msg_frame,
+            text="↓ 回到底部",
+            font=("微软雅黑", 9, "bold"),
+            bg="#4e6ef2",
+            fg="#ffffff",
+            cursor="hand2",
+            padx=10,
+            pady=5
+        )
+        self.jump_bottom_btn.bind("<Button-1>", lambda _e: self._scroll_to_bottom())
+        self.jump_bottom_btn.place_forget()
+        self._jump_bottom_visible = False
+
+        # 监听滚轮，动态更新按钮可见性
+        self.msg_canvas.bind("<MouseWheel>", self._on_msg_canvas_mousewheel)
+        self.msg_canvas.bind("<Button-4>", self._on_msg_canvas_mousewheel)
+        self.msg_canvas.bind("<Button-5>", self._on_msg_canvas_mousewheel)
 
         # 底部输入区域
         self._create_input_area(chat_frame)
 
         return chat_frame
+
+    def _switch_chat_submenu(self, tab: str):
+        """AI问答左侧子菜单切换：assistant | kb。"""
+        self.chat_submenu_var.set(tab)
+        if hasattr(self, "assistant_subpage"):
+            self.assistant_subpage.pack_forget()
+        if hasattr(self, "kb_subpage"):
+            self.kb_subpage.pack_forget()
+        if tab == "kb":
+            if hasattr(self, "kb_subpage"):
+                self.kb_subpage.pack(fill=tk.BOTH, expand=True, padx=10, pady=8)
+            if hasattr(self, "chat_submenu_assistant_btn"):
+                self.chat_submenu_assistant_btn.config(bg="#ffffff", fg="#666666", font=("微软雅黑", 10))
+            if hasattr(self, "chat_submenu_kb_btn"):
+                self.chat_submenu_kb_btn.config(bg="#eaf1ff", fg="#3558d6", font=("微软雅黑", 10, "bold"))
+        else:
+            if hasattr(self, "assistant_subpage"):
+                self.assistant_subpage.pack(fill=tk.BOTH, expand=True, padx=10, pady=8)
+            if hasattr(self, "chat_submenu_assistant_btn"):
+                self.chat_submenu_assistant_btn.config(bg="#eaf1ff", fg="#3558d6", font=("微软雅黑", 10, "bold"))
+            if hasattr(self, "chat_submenu_kb_btn"):
+                self.chat_submenu_kb_btn.config(bg="#ffffff", fg="#666666", font=("微软雅黑", 10))
 
     def _create_input_area(self, parent):
         """创建底部输入区域 - 豆包风格"""
@@ -930,6 +1253,7 @@ class DoubaoChatPage(tk.Frame):
 
         for i, msg in enumerate(self.messages):
             self._create_message_bubble(msg, msg_index=i)
+        self._scroll_to_bottom()
 
     def _stream_update_thinking(self, msg_index, text, status=None):
         """流式更新思考过程 - 使用Text组件，支持状态显示"""
@@ -960,7 +1284,9 @@ class DoubaoChatPage(tk.Frame):
         if msg_index < len(self.messages_frame.winfo_children()):
             bubble_frame = self.messages_frame.winfo_children()[msg_index]
             if hasattr(bubble_frame, 'ai_content_frame'):
-                content_text = bubble_frame.ai_content_frame
+                content_text = getattr(bubble_frame.ai_content_frame, "content_text", None)
+                if content_text is None:
+                    return
                 content_text.config(state=tk.NORMAL)
                 content_text.delete("1.0", tk.END)
                 content_text.insert("1.0", text)
@@ -980,8 +1306,48 @@ class DoubaoChatPage(tk.Frame):
         """滚动消息区域到底部"""
         try:
             self.after(100, lambda: self.msg_canvas.yview_moveto(1.0))
+            self.after(140, self._update_jump_bottom_visibility)
         except Exception as e:
             print(f"滚动失败: {e}")
+
+    def _on_msg_scrollbar(self, *args):
+        """滚动条驱动滚动并同步到底按钮状态。"""
+        self.msg_canvas.yview(*args)
+        self._update_jump_bottom_visibility()
+
+    def _on_msg_canvas_yscroll(self, scrollbar, first, last):
+        """Canvas滚动回调：同步滚动条并刷新按钮状态。"""
+        scrollbar.set(first, last)
+        self._update_jump_bottom_visibility()
+
+    def _on_msg_canvas_mousewheel(self, event):
+        """鼠标滚轮滚动消息区（Windows/Linux兼容）。"""
+        try:
+            if getattr(event, "num", None) == 4:
+                self.msg_canvas.yview_scroll(-1, "units")
+            elif getattr(event, "num", None) == 5:
+                self.msg_canvas.yview_scroll(1, "units")
+            else:
+                delta = int(-1 * (event.delta / 120)) if getattr(event, "delta", 0) else 0
+                if delta:
+                    self.msg_canvas.yview_scroll(delta, "units")
+        finally:
+            self._update_jump_bottom_visibility()
+
+    def _update_jump_bottom_visibility(self):
+        """根据滚动位置显示/隐藏“一键到底”按钮。"""
+        try:
+            first, last = self.msg_canvas.yview()
+            at_bottom = (last >= 0.995)
+            should_show = (not at_bottom) and (last - first < 0.999)
+            if should_show and not getattr(self, "_jump_bottom_visible", False):
+                self.jump_bottom_btn.place(relx=0.98, rely=0.95, anchor="se")
+                self._jump_bottom_visible = True
+            elif (not should_show) and getattr(self, "_jump_bottom_visible", False):
+                self.jump_bottom_btn.place_forget()
+                self._jump_bottom_visible = False
+        except Exception:
+            pass
 
     def _refresh_session_list(self):
         """刷新会话列表"""
@@ -1261,6 +1627,134 @@ class DoubaoChatPage(tk.Frame):
             import traceback
             traceback.print_exc()
 
+    def _to_readable_block(self, data, max_chars: int = 900) -> str:
+        """把输入/输出转成阅读友好的文本，避免直接抛原始长串。"""
+        try:
+            if isinstance(data, (dict, list)):
+                text = json.dumps(data, ensure_ascii=False, indent=2)
+            else:
+                text = str(data or "")
+        except Exception:
+            text = str(data or "")
+        text = text.replace("|", " ")
+        text = "\n".join([ln.strip() for ln in text.splitlines() if ln.strip()])
+        if len(text) > max_chars:
+            text = text[:max_chars] + f"\n...（已截断 {len(text) - max_chars} 字符）"
+        return text or "（空）"
+
+    def _build_retrieve_display_text(self, query: str, search_results: list) -> str:
+        if not search_results:
+            return f"检索查询：{query}\n结果：未召回相关知识。"
+        lines = [f"检索查询：{query}", f"召回结果：共 {len(search_results)} 条", "", "【召回内容】"]
+        for i, r in enumerate(search_results, 1):
+            score = r.get("score", 0.0)
+            src = r.get("source_file", "未知来源")
+            content = self._to_readable_block(r.get("content", ""), max_chars=260)
+            lines.append(f"{i}. 相似度 {score:.3f} | 来源 {src}\n{content}")
+        return "\n".join(lines)
+
+    def _extract_task_and_query(self, user_message: str) -> dict:
+        """轻量任务提取：先抽取任务目标，再决定是否需要RAG。"""
+        msg = (user_message or "").strip()
+        tool_keywords = ["工具", "调用", "可用", "能力", "作用", "列举", "有哪些"]
+        rag_need_keywords = ["原理", "对比", "解释", "总结", "方案", "最佳实践", "怎么做", "为什么"]
+        tool_question = ("工具" in msg and ("作用" in msg or "列举" in msg or "调用" in msg or "可用" in msg)) \
+            or "可以使用什么工具" in msg or "可调用工具" in msg
+        task = "列举系统可调用工具及作用" if tool_question else "回答用户问题"
+        query = msg
+        needs_rag_by_rule = (not tool_question) and any(k in msg for k in rag_need_keywords)
+        return {
+            "task": task,
+            "query": query,
+            "tool_question": tool_question,
+            "needs_rag_by_rule": needs_rag_by_rule,
+        }
+
+    @staticmethod
+    def _is_rag_context_reliable(user_message: str, rewritten_query: str, search_results: list) -> tuple:
+        """
+        判断召回是否可作为回答依据：
+        - 相关性分数均值太低 -> 不可靠
+        - 查询关键词与召回内容几乎无交集 -> 不可靠
+        """
+        if not search_results:
+            return False, "未召回到内容"
+        scores = [float(r.get("score", 0.0) or 0.0) for r in search_results]
+        avg_score = sum(scores) / max(len(scores), 1)
+        base_query = (rewritten_query or user_message or "").lower()
+        q_tokens = [t for t in re.split(r"[\s,，。！？;；:：\-\(\)\[\]、]+", base_query) if len(t) >= 2]
+        q_tokens = q_tokens[:12]
+        hit = 0
+        for r in search_results[:3]:
+            txt = str(r.get("content", "")).lower()
+            if any(t in txt for t in q_tokens):
+                hit += 1
+        # 阈值较保守：至少中等相似度，且前3条里至少1条命中关键词
+        if avg_score < 0.42:
+            return False, f"召回相似度偏低(avg={avg_score:.3f})"
+        if q_tokens and hit == 0:
+            return False, "召回内容与查询关键词无明显交集"
+        return True, f"召回可用(avg={avg_score:.3f}, 关键词命中={hit})"
+
+    def _build_tool_capability_answer(self) -> str:
+        """工具类问题优先给结构化答案，避免泛化到RAG内容。"""
+        tool_desc_map = {}
+        runtime_tools = []
+        if self._standard_runtime and getattr(self._standard_runtime, "_tools", None):
+            runtime_tools = list(self._standard_runtime._tools or [])
+        elif self._cursor_tools:
+            runtime_tools = list(self._cursor_tools or [])
+        for t in runtime_tools:
+            n = (getattr(t, "name", "") or "").strip()
+            d = (getattr(t, "description", "") or "").strip()
+            if n:
+                tool_desc_map[n] = d
+
+        def d(name: str, fallback: str) -> str:
+            return tool_desc_map.get(name) or fallback
+
+        lines = [
+            "我当前可调用的工具按用途分类如下：",
+            "",
+            "### 一、项目代码操作类",
+            "| 工具名 | 功能 |",
+            "|--------|------|",
+            f"| `search` | {d('search', '项目目录内文本搜索，支持指定文件类型、最大匹配数')} |",
+            f"| `read` | {d('read', '读取项目文件内容，支持指定行范围')} |",
+            f"| `write` | {d('write', '写入项目文件，支持覆盖/追加模式')} |",
+            f"| `replace` | {d('replace', '对指定文件执行字符串替换')} |",
+            f"| `terminal` | {d('terminal', '在项目根目录执行终端命令')} |",
+            "",
+            "### 二、信息搜索类",
+            "| 工具名 | 功能 |",
+            "|--------|------|",
+            f"| `web_search` | {d('web_search', '联网通用搜索，无需额外API密钥')} |",
+            f"| `github` | {d('github', 'GitHub仓库信息查询、代码搜索')} |",
+            f"| `rag_search` | {d('rag_search', '检索本地知识库内容')} |",
+            f"| `agentic_rag_query` | {d('agentic_rag_query', '基于Agentic RAG回答复杂专业问题')} |",
+            "",
+            "### 三、网页操作类",
+            "| 工具名 | 功能 |",
+            "|--------|------|",
+            f"| `playwright` | {d('playwright', '对指定网页截图')} |",
+            f"| `preview` | {d('preview', '用系统浏览器打开预览URL或本地文件')} |",
+            "",
+            "### 四、智能处理&工作流类",
+            "| 工具名 | 功能 |",
+            "|--------|------|",
+            f"| `intent_recognize` | {d('intent_recognize', '识别用户查询意图')} |",
+            f"| `query_rewrite` | {d('query_rewrite', '改写优化用户查询语句')} |",
+            f"| `list_workflow_nodes` | {d('list_workflow_nodes', '列出当前可执行的工作流节点ID')} |",
+            f"| `run_workflow_node` | {d('run_workflow_node', '执行指定的工作流节点，支持传入自定义配置/上下文')} |",
+            f"| `multimodal_to_text` | {d('multimodal_to_text', '多模态输入转标准文本（文件/原文）')} |",
+            f"| `link_multimodal_pipeline` | {d('link_multimodal_pipeline', '链接识别+规则路由+规范化+文档化（不经LLM路由）')} |",
+            f"| `video_link_downloader_strict` | {d('video_link_downloader_strict', '严格视频下载：非视频直接拒绝，不执行下载')} |",
+            f"| `template_controlled_doc_generation` | {d('template_controlled_doc_generation', '按模板与Prompt生成结构化文档（LLM）')} |",
+            f"| `image_ocr_to_text` | {d('image_ocr_to_text', 'OCR图片转文本，返回引擎与文本结果')} |",
+            f"| `rag_agentic_answer` | {d('rag_agentic_answer', '固定预处理 + Agentic RAG 执行并返回答案/引用/工具链路')} |",
+        ]
+        return "\n".join(lines)
+
     def _call_ai_api_stream(self, user_message, is_thinking=False, rag_context=None):
         """调用火山引擎API获取流式回复（使用配置参数）
         
@@ -1300,6 +1794,27 @@ class DoubaoChatPage(tk.Frame):
             else:
                 system_prompt = self.ai_config.get("response_system_prompt",
                     "你是一个专业的AI助手，擅长回答各种问题。请根据用户的问题提供准确、有用的回答。")
+
+            task_extract = self._extract_task_and_query(user_message)
+            # 针对“可调用工具”类问题，显式注入当前系统可用工具，避免模型泛化到无关平台能力。
+            if (not is_thinking) and task_extract.get("tool_question"):
+                available = []
+                for t in (self._cursor_tools or []):
+                    try:
+                        name = getattr(t, "name", "") or ""
+                        desc = getattr(t, "description", "") or ""
+                        if name:
+                            available.append(f"- {name}: {desc[:120]}")
+                    except Exception:
+                        continue
+                if self._rag_tool:
+                    available.append("- rag_search: 检索本地知识库内容并返回相关片段")
+                if available:
+                    system_prompt += (
+                        "\n\n请先完成任务提取，再回答：用户目标是“列举可调用工具及作用”。"
+                        "不得把RAG召回直接当最终答案。请只基于以下本系统可调用工具回答，不要虚构平台能力：\n"
+                        + "\n".join(available)
+                    )
             
             if rag_context:
                 system_prompt += f"\n\n在回答时，请参考以下知识库信息：{rag_context}\n请基于以上信息回答用户问题。"
@@ -1438,6 +1953,81 @@ class DoubaoChatPage(tk.Frame):
         # 在新线程中执行流式输出，避免卡住主界面
         def stream_in_thread():
             try:
+                # 优先使用 LangChain SDK 执行 ReAct 环（你的诉求：避免手写 loop 漂移）
+                if self._standard_runtime and self._standard_runtime.ready and bool(CONFIG.get("langchain_react_executor_enabled", True)):
+                    bundle = None
+                    if hasattr(self._standard_runtime, "_preprocess"):
+                        try:
+                            bundle = self._standard_runtime._preprocess(user_message)
+                        except Exception as _e:
+                            self._log_to_file(f"标准预处理失败，继续执行: {_e}")
+                            bundle = None
+
+                    if REACT_CHAIN_AVAILABLE:
+                        def add_sdk_steps():
+                            bubble_frame = self.messages_frame.winfo_children()[msg_index]
+                            if not hasattr(bubble_frame, 'ai_content_frame'):
+                                return
+                            ai_frame = bubble_frame.ai_content_frame
+                            if not hasattr(ai_frame, 'thought_chain'):
+                                return
+                            tc = ai_frame.thought_chain
+                            task = (bundle or {}).get("task", "回答用户问题")
+                            query = (bundle or {}).get("query", user_message)
+                            needs_rag = (bundle or {}).get("needs_rag")
+                            tc.add_step("intent", "意图识别", f"任务提取: {task}\n问题提取: {query}\n需要RAG: {needs_rag}", status="completed")
+                            tc.add_step("rewrite", "Query改写", f"原始: {user_message}\n改写: {(bundle or {}).get('rewritten_query', user_message)}", status="completed")
+                            tc.add_step("retrieve", "知识检索",
+                                        f"RAG可用性: {(bundle or {}).get('rag_reliable_reason', '未执行或无需RAG')}\n"
+                                        f"RAG上下文长度: {len((bundle or {}).get('rag_context', '') or '')}", status="completed")
+                            running = tc.add_step("reason", "推理分析", "智能助手正在分析问题并规划执行步骤...", status="running")
+                            tc.expand_last()
+                            bubble_frame.ai_content_frame._std_reason_step = running
+                        self.after(0, add_sdk_steps)
+
+                    result = self._standard_runtime.invoke(user_message, preprocessed=bundle)
+                    if REACT_CHAIN_AVAILABLE:
+                        def finalize_sdk_steps():
+                            if msg_index >= len(self.messages_frame.winfo_children()):
+                                return
+                            bubble_frame = self.messages_frame.winfo_children()[msg_index]
+                            if not hasattr(bubble_frame, "ai_content_frame"):
+                                return
+                            ai_frame = bubble_frame.ai_content_frame
+                            tc = getattr(ai_frame, "thought_chain", None)
+                            if not tc:
+                                return
+                            reason_step = getattr(ai_frame, "_std_reason_step", None)
+                            if reason_step:
+                                reason_step.update_content("思考完成，正在组织最终回答。")
+                                reason_step.update_status("completed")
+                            for i, item in enumerate(result.get("intermediate_steps", []) or [], 1):
+                                try:
+                                    action, observation = item
+                                    tool_name = getattr(action, "tool", "unknown")
+                                    tool_input = getattr(action, "tool_input", {})
+                                    content = (
+                                        f"智能助手调用工具: {tool_name}\n\n"
+                                        f"【输入参数】\n{self._to_readable_block(tool_input, max_chars=500)}\n\n"
+                                        f"【执行结果】\n{self._to_readable_block(observation, max_chars=900)}"
+                                    )
+                                    tc.add_step("reason", f"工具执行 {i}: {tool_name}", content, status="completed")
+                                except Exception:
+                                    continue
+                            # 思考结束后自动折叠一次；仍可手动展开查看
+                            try:
+                                tc.collapse_all()
+                            except Exception:
+                                pass
+                        self.after(0, finalize_sdk_steps)
+                    if result.get("ok"):
+                        ai_msg["content"] = result.get("output", "")
+                    else:
+                        ai_msg["content"] = result.get("output", "标准运行时执行失败。")
+                    self.after(0, lambda t=ai_msg["content"]: self._stream_update_content(msg_index, t))
+                    self.after(0, self._save_current_session)
+                    return
+
                 # 初始化ReAct思考链步骤引用
                 intent_step = None
                 rewrite_step = None
@@ -1446,6 +2036,7 @@ class DoubaoChatPage(tk.Frame):
                 
                 # ========== Step 1: 意图识别 ==========
                 intent_result = None
+                task_info = self._extract_task_and_query(user_message)
                 
                 if REACT_CHAIN_AVAILABLE and RAG_TOOLS_AVAILABLE and self._rag_tool:
                     # 添加意图识别步骤到思考链
@@ -1463,12 +2054,20 @@ class DoubaoChatPage(tk.Frame):
                     
                     # 执行意图识别
                     intent_result = self._rag_tool.intent_recognizer.recognize(user_message, use_llm=True)
-                    self._log_to_file(f"意图识别结果: {intent_result.intent.value}, 需要RAG: {intent_result.needs_rag}")
+                    # 规则兜底：工具问答优先走工具枚举，不走RAG主链
+                    if task_info.get("tool_question"):
+                        intent_result.needs_rag = False
+                    self._log_to_file(
+                        f"意图识别结果: {intent_result.intent.value}, 需要RAG: {intent_result.needs_rag}, "
+                        f"任务={task_info.get('task')}, query={task_info.get('query')[:80]}"
+                    )
                     
                     # 更新意图识别步骤
                     def update_intent_step():
                         if intent_step:
                             intent_step.update_content(
+                                f"任务提取: {task_info.get('task')}\n"
+                                f"问题提取: {task_info.get('query')}\n"
                                 f"意图: {intent_result.intent.value}\n"
                                 f"置信度: {intent_result.confidence:.2f}\n"
                                 f"需要RAG: {intent_result.needs_rag}\n"
@@ -1546,6 +2145,8 @@ class DoubaoChatPage(tk.Frame):
                 # ========== Step 3: 知识检索 ==========
                 search_results = []
                 rag_context = ""
+                rag_reliable = False
+                rag_reliable_reason = "未检索"
                 
                 if REACT_CHAIN_AVAILABLE and RAG_TOOLS_AVAILABLE and self._rag_tool and \
                    (intent_result is None or intent_result.needs_rag):
@@ -1593,14 +2194,13 @@ class DoubaoChatPage(tk.Frame):
                                 'score': chunk.similarity
                             })
                         
-                        # 更新知识检索步骤
+                        # 更新知识检索步骤（召回结果直接放在知识检索折叠里）
                         def update_retrieve_step():
                             if retrieve_step:
                                 if search_results:
-                                    content = f"使用查询: {rewritten_query[:100]}...\n"
-                                    content += f"检索到 {len(search_results)} 条相关知识:\n"
-                                    for i, result in enumerate(search_results, 1):
-                                        content += f"{i}. [{result['score']:.3f}] {result['content'][:80]}...\n"
+                                    content = self._build_retrieve_display_text(rewritten_query, search_results)
+                                    reliable, reason = self._is_rag_context_reliable(user_message, rewritten_query, search_results)
+                                    content += f"\n\n【可用性判定】\n- 结论: {'可用' if reliable else '不可直接作为答案依据'}\n- 原因: {reason}"
                                     retrieve_step.update_content(content)
                                     retrieve_step.update_status("completed")
                                 else:
@@ -1610,13 +2210,23 @@ class DoubaoChatPage(tk.Frame):
                         
                         # 构建RAG上下文
                         if search_results:
-                            rag_context = "\n\n【知识库参考信息】\n"
-                            for i, result in enumerate(search_results, 1):
-                                rag_context += f"{i}. {result['content'][:300]}...\n"
-                            self._log_to_file(f"RAG检索到 {len(search_results)} 条相关知识")
+                            rag_reliable, rag_reliable_reason = self._is_rag_context_reliable(
+                                user_message, rewritten_query, search_results
+                            )
+                            if rag_reliable:
+                                rag_context = "\n\n【知识库参考信息】\n"
+                                for i, result in enumerate(search_results, 1):
+                                    rag_context += f"{i}. {result['content'][:300]}...\n"
+                                self._log_to_file(
+                                    f"RAG检索到 {len(search_results)} 条相关知识，可用性=通过，原因={rag_reliable_reason}"
+                                )
+                            else:
+                                rag_context = ""
+                                self._log_to_file(
+                                    f"RAG检索到 {len(search_results)} 条，但可用性=不通过，原因={rag_reliable_reason}"
+                                )
                             
-                            # 显示召回片段
-                            self.after(0, lambda: self._show_retrieved_chunks(msg_index, search_results))
+                            # 召回结果已写入知识检索折叠，不再额外插入重复召回卡片
                             
                     except Exception as e:
                         self._log_to_file(f"RAG检索失败: {e}")
@@ -1642,7 +2252,14 @@ class DoubaoChatPage(tk.Frame):
                 
                 # 生成思考过程
                 thinking_content = ""
-                thinking_prompt = f"请分析这个问题，简要说明你的思考步骤（3-5点）：{user_message}"
+                thinking_prompt = (
+                    "请做任务提取与推理分析（3-5点）："
+                    f"\n用户问题：{user_message}"
+                    f"\n任务提取：{task_info.get('task')}"
+                    f"\n是否使用RAG：{(intent_result.needs_rag if intent_result else task_info.get('needs_rag_by_rule'))}"
+                    f"\nRAG可用性：{rag_reliable_reason}"
+                    "\n注意：RAG召回内容只能作为参考，先判断相关性再决定是否可用于答案。"
+                )
                 
                 for chunk in self._call_ai_api_stream(thinking_prompt, is_thinking=True):
                     if chunk["type"] == "content":
@@ -1667,11 +2284,19 @@ class DoubaoChatPage(tk.Frame):
                         if reason_step:
                             reason_step.update_content(thinking_content)
                             reason_step.update_status("completed")
+                            try:
+                                bubble_frame = self.messages_frame.winfo_children()[msg_index]
+                                ai_frame = getattr(bubble_frame, "ai_content_frame", None)
+                                tc = getattr(ai_frame, "thought_chain", None)
+                                if tc:
+                                    tc.collapse_all()
+                            except Exception:
+                                pass
                     self.after(0, complete_reason_step)
                 
                 self._log_to_file(f"思考过程完成: {thinking_content[:100]}...")
 
-                # ========== Step 4.5: 工具调用（Cursor风格） ==========
+                # ========== Step 4.5: 工具调用（纳入推理分析结构） ==========
                 tool_ctx = ""
                 tool_step = None
                 if CURSOR_TOOLS_AVAILABLE and self._cursor_tools:
@@ -1683,7 +2308,7 @@ class DoubaoChatPage(tk.Frame):
                                 ai_frame = bubble_frame.ai_content_frame
                                 if hasattr(ai_frame, 'thought_chain'):
                                     tool_step = ai_frame.thought_chain.add_step(
-                                        "tools", "工具调用", "正在判断是否需要调用工具...", status="running"
+                                        "reason", "推理分析 / 工具调用规划", "正在判断是否需要调用工具...", status="running"
                                     )
                         self.after(0, add_tool_step)
 
@@ -1702,14 +2327,47 @@ class DoubaoChatPage(tk.Frame):
 
                         if REACT_CHAIN_AVAILABLE and tool_step:
                             def update_tool_step():
-                                if tool_step:
-                                    if results:
-                                        brief = "\n".join([f"- {r['name']}: {'OK' if r['ok'] else 'FAIL'}" for r in results])
-                                        tool_step.update_content(f"已执行工具：\n{brief}")
-                                    else:
-                                        tool_step.update_content("本轮无需调用工具。")
-                                    tool_step.update_status("completed")
+                                if not tool_step:
+                                    return
+                                if results:
+                                    brief = "\n".join([f"- {r['name']}: {'成功' if r['ok'] else '失败'}" for r in results])
+                                    tool_step.update_content(f"已规划并执行工具：\n{brief}")
+                                else:
+                                    tool_step.update_content("本轮无需调用工具。")
+                                tool_step.update_status("completed")
                             self.after(0, update_tool_step)
+
+                        # 每个工具调用单独作为“推理分析”下的步骤显示，带输入/输出
+                        if REACT_CHAIN_AVAILABLE and results:
+                            def add_tool_call_steps():
+                                bubble_frame = self.messages_frame.winfo_children()[msg_index]
+                                if not hasattr(bubble_frame, 'ai_content_frame'):
+                                    return
+                                ai_frame = bubble_frame.ai_content_frame
+                                if not hasattr(ai_frame, 'thought_chain'):
+                                    return
+                                for i, r in enumerate(results, 1):
+                                    call = calls[i - 1] if i - 1 < len(calls) else None
+                                    tool_name = r.get("name", "unknown")
+                                    ok = bool(r.get("ok"))
+                                    io_in = self._to_readable_block(call.arguments if call else {}, max_chars=500)
+                                    io_out = self._to_readable_block(r.get("result", ""), max_chars=900)
+                                    content = (
+                                        f"调用类型：{tool_name}\n"
+                                        f"执行状态：{'成功' if ok else '失败'}\n\n"
+                                        f"【输入参数】\n{io_in}\n\n"
+                                        f"【输出结果】\n{io_out}"
+                                    )
+                                    step = ai_frame.thought_chain.add_step(
+                                        "reason",
+                                        f"推理分析 / 工具调用 {i}: {tool_name}",
+                                        content,
+                                        status="completed" if ok else "failed",
+                                    )
+                                    # 自动展开，保证输入/输出第一眼可见
+                                    if not step.is_expanded:
+                                        step._toggle()
+                            self.after(0, add_tool_call_steps)
                     except Exception as e:
                         if REACT_CHAIN_AVAILABLE and tool_step:
                             def update_tool_step_fail():
@@ -1721,6 +2379,13 @@ class DoubaoChatPage(tk.Frame):
                 # ========== Step 5: 生成回答 ==========
                 self._log_to_file("开始生成回答...")
 
+                # 工具能力类问题优先结构化直答，避免把RAG召回误当答案
+                if task_info.get("tool_question"):
+                    ai_msg["content"] = self._build_tool_capability_answer()
+                    self.after(0, lambda t=ai_msg["content"]: self._stream_update_content(msg_index, t))
+                    self.after(0, self._save_current_session)
+                    return
+
                 rag_context_final = rag_context + (tool_ctx or "")
                 # 标准 LangChain 架构：模型+工具循环+memory 统一交给 AgentExecutor
                 if self._standard_runtime and self._standard_runtime.ready:
@@ -1728,8 +2393,19 @@ class DoubaoChatPage(tk.Frame):
                     if rag_context_final:
                         augmented_input += f"\n\n请参考上下文：\n{rag_context_final}"
                     result = self._standard_runtime.invoke(augmented_input)
-                    ai_msg["content"] = result.get("output", "") if result.get("ok") else result.get("output", "标准运行时失败")
-                    self.after(0, lambda t=ai_msg["content"]: self._stream_update_content(msg_index, t))
+                    if result.get("ok"):
+                        ai_msg["content"] = result.get("output", "")
+                        self.after(0, lambda t=ai_msg["content"]: self._stream_update_content(msg_index, t))
+                    else:
+                        # Ark 等兼容端在部分版本下可能不支持 responses API，失败时自动回落旧链路，保证问答可用。
+                        self._log_to_file(f"标准运行时失败，回落旧链路：{result.get('output', '')}")
+                        for chunk in self._call_ai_api_stream(user_message, is_thinking=False, rag_context=rag_context_final):
+                            if chunk["type"] == "content":
+                                ai_msg["content"] += chunk["content"]
+                                self.after(0, lambda t=ai_msg["content"]: self._stream_update_content(msg_index, t))
+                            elif chunk["type"] == "error":
+                                ai_msg["content"] = chunk["content"]
+                                self.after(0, lambda t=ai_msg["content"]: self._stream_update_content(msg_index, t))
                 else:
                     # 兼容旧链路
                     for chunk in self._call_ai_api_stream(user_message, is_thinking=False, rag_context=rag_context_final):
@@ -2221,7 +2897,7 @@ class App:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title(APP_TITLE)
-        self.root.geometry("1200x800")
+        self._configure_root_window()
         self.root.configure(bg=UI_BG)
         # 允许窗口大小调整
         self.root.resizable(True, True)
@@ -2235,6 +2911,12 @@ class App:
         self.processing_queue = False
         self.current_task_index = 0
         self.queue_max_size = 50  # 默认队列最大大小
+        self._workflow_run_lock = threading.Lock()
+        self._workflow_running = False
+        self._workflow_stop_event = threading.Event()
+        self._workflow_last_run_state = {}
+        self._workflow_scheduler_thread = None
+        self._workflow_scheduler_stop_event = threading.Event()
         
         # 任务取消标志 - 用于停止正在执行的任务
         self.task_cancel_flags = {}  # {link: cancel_event}
@@ -2279,7 +2961,41 @@ class App:
                 print("[RAG] 程序启动，正在初始化新的RAG工具系统（意图识别+元数据）...")
                 kb = get_knowledge_base()
                 from rag_tools import RAGTool, IntentRecognizer
-                intent_recognizer = IntentRecognizer(llm_client=None)  # 暂时不使用LLM
+                # 意图识别：单独接一个 LLM（基于 prompt 做任务分析+问题提取）
+                # 默认使用配置中心主接入点；可通过 config.json 覆盖 intent_llm_endpoint_id
+                llm_client = None
+                try:
+                    from ai_api_config_gui import AIAPIConfigManager, _normalize_openai_base_url
+                    from volcenginesdkarkruntime import Ark
+
+                    cfg = AIAPIConfigManager(runtime_overlay=CONFIG).get_config()
+                    base_url = _normalize_openai_base_url(cfg.get("base_url") or AI_CHAT_API_URL)
+                    api_key = (cfg.get("api_key") or CONFIG.get("volcengine_api_key") or AI_CHAT_API_KEY or "").strip()
+                    intent_endpoint = (CONFIG.get("intent_llm_endpoint_id") or cfg.get("endpoint_id") or "").strip()
+
+                    class _ArkSimpleClient:
+                        def __init__(self):
+                            self._ark = Ark(base_url=base_url, api_key=api_key)
+
+                        def complete(self, prompt: str, max_tokens: int = 600):
+                            resp = self._ark.chat.completions.create(
+                                model=intent_endpoint,
+                                messages=[
+                                    {"role": "system", "content": "你是一个严谨的意图识别器，只输出 JSON，不要输出多余文本。"},
+                                    {"role": "user", "content": prompt},
+                                ],
+                                temperature=0.2,
+                                max_tokens=max_tokens,
+                            )
+                            return resp.choices[0].message.content if resp and resp.choices else ""
+
+                    if api_key and intent_endpoint:
+                        llm_client = _ArkSimpleClient()
+                except Exception as e:
+                    print(f"[RAG] 意图识别 LLM 初始化失败，将退回默认策略：{e}")
+                    llm_client = None
+
+                intent_recognizer = IntentRecognizer(llm_client=llm_client)
                 self._rag_tool = RAGTool(kb, intent_recognizer)
                 self._rag_kb = kb  # 向后兼容
                 stats = kb.get_stats()
@@ -2314,6 +3030,10 @@ class App:
 
         # 先构建UI，确保所有UI组件都已创建
         self._build_ui()
+        # 服务启动后异步预热 MinerU（不阻塞窗口打开）
+        self._mineru_warmup_started = False
+        self._mineru_warmup_done = False
+        self.root.after(600, self._start_async_mineru_warmup)
         
         # 运维Agent初始化（必须在UI构建之后，因为需要使用append_log）
         if OPS_AGENT_AVAILABLE:
@@ -2332,13 +3052,72 @@ class App:
         
         # 自动恢复未完成任务
         self.recover_unfinished_tasks()
+        # 若已配置开启，启动轻量定时编排器
+        if bool(CONFIG.get("workflow_scheduler_enabled", False)):
+            self._start_workflow_scheduler()
         
         # 显示系统信息
-        self.append_log(f"系统CPU核心数：{self.cpu_count}")
+        self.append_log(f"系统 CPU 核心数：{self.cpu_count}")
         self.append_log(f"线程池最大工作线程数：{self.max_workers}")
         
         # 绑定窗口关闭事件
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def _start_async_mineru_warmup(self):
+        """服务启动后后台预热 MinerU，避免首次 PDF 慢启动。"""
+        if self._mineru_warmup_started:
+            return
+        if not MINERU_PROCESSOR_AVAILABLE:
+            return
+        self._mineru_warmup_started = True
+        self.append_log("🚀 服务启动：后台预热 MinerU（不影响界面打开）")
+        t = threading.Thread(target=self._mineru_warmup_thread, daemon=True)
+        t.start()
+
+    def _mineru_warmup_thread(self):
+        try:
+            p = MinerUProcessor(output_dir=OUTPUT_DIR)
+            res = p.warmup(force=False)
+            if res.success:
+                self._mineru_warmup_done = True
+                method = (res.metadata or {}).get("method", "")
+                self.append_log(f"✅ MinerU 预热完成（method={method or 'unknown'}）")
+            else:
+                self.append_log(f"❌ MinerU 预热失败：{res.error}", "WARNING")
+        except Exception as e:
+            self.append_log(f"❌ MinerU 预热异常：{e}", "WARNING")
+    
+    def _extract_clean_url(self, text: str) -> str:
+        """从包含额外文本的字符串中提取纯净的 URL"""
+        import re
+        # 清理反引号
+        text = text.strip('`')
+        
+        # 使用正则表达式提取 HTTP/HTTPS URL
+        url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+        matches = re.findall(url_pattern, text)
+        
+        if matches:
+            # 返回第一个匹配的 URL
+            return matches[0]
+        
+        # 如果没有找到 URL，返回原文本（已清理反引号）
+        return text
+
+    def _configure_root_window(self):
+        """按屏幕大小设置初始窗口，保证首屏尽量完整显示。"""
+        try:
+            sw = max(1280, int(self.root.winfo_screenwidth()))
+            sh = max(800, int(self.root.winfo_screenheight()))
+            w = min(1520, int(sw * 0.9))
+            h = min(980, int(sh * 0.9))
+            x = max(0, (sw - w) // 2)
+            y = max(0, (sh - h) // 2)
+            self.root.geometry(f"{w}x{h}+{x}+{y}")
+            self.root.minsize(1180, 760)
+        except Exception:
+            self.root.geometry("1360x860")
+            self.root.minsize(1180, 760)
 
     def _build_ui(self):
         # 设置样式
@@ -2382,7 +3161,7 @@ class App:
         
         title_label = tk.Label(
             title_frame,
-            text="视频转文字处理工具",
+            text="多模态文档化助手",
             font=UI_FONT_TITLE,
             foreground=UI_TEXT,
             bg=UI_BG,
@@ -2391,88 +3170,165 @@ class App:
         
         subtitle_label = tk.Label(
             title_frame,
-            text="智能视频分析与文本转换",
+            text="Multimodal Doc Assistant",
             font=UI_FONT,
             foreground=UI_TEXT_MUTED,
             bg=UI_BG,
         )
         subtitle_label.pack(anchor=tk.W, pady=(4, 0))
         
-        # 导航：与背景同色的扁平分段，选中项用浅色底 + 强调色文字
-        nav_frame = tk.Frame(main_container, bg=UI_BG, bd=0, highlightthickness=0)
-        nav_frame.pack(fill=tk.X, pady=(0, 12))
-        
-        nav_container = tk.Frame(nav_frame, bg=UI_BG)
-        nav_container.pack(fill=tk.X, padx=0, pady=4)
-        
+        # 页面主体：左侧竖直导航 + 右侧内容区域
+        body_frame = tk.Frame(main_container, bg=UI_BG)
+        body_frame.pack(fill=tk.BOTH, expand=True)
+
+        nav_frame = tk.Frame(
+            body_frame,
+            bg=UI_CARD,
+            highlightbackground=UI_BORDER,
+            highlightthickness=1,
+            bd=0,
+        )
+        nav_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 12))
+
+        nav_container = tk.Frame(nav_frame, bg=UI_CARD)
+        nav_container.pack(fill=tk.Y, padx=10, pady=10)
+
         nav_btn_style = {
             "font": UI_FONT_NAV,
-            "padx": 18,
-            "pady": 6,
+            "padx": 16,
+            "pady": 8,
             "bd": 0,
             "relief": tk.FLAT,
             "cursor": "hand2",
+            "anchor": "w",
+            "width": 14,
             "activebackground": UI_ACCENT_SOFT,
             "activeforeground": UI_ACCENT,
         }
-        
-        # 视频处理页面按钮（默认选中）
+
+        # 链接文档化页面按钮（默认选中）
         self.nav_video_btn = tk.Button(
             nav_container,
-            text="视频处理",
+            text="链接文档化",
             command=self._show_video_page,
-            bg=UI_CARD,
+            bg=UI_ACCENT_SOFT,
             fg=UI_ACCENT,
             **nav_btn_style,
         )
-        self.nav_video_btn.pack(side=tk.LEFT, padx=(0, 6))
-        
+        self.nav_video_btn.pack(fill=tk.X, pady=(0, 6))
+
+        # 任务编排（独立母菜单）
+        self.nav_orchestration_btn = tk.Button(
+            nav_container,
+            text="任务编排",
+            command=self._show_orchestration_page,
+            bg=UI_CARD,
+            fg=UI_TEXT_MUTED,
+            **nav_btn_style,
+        )
+        self.nav_orchestration_btn.pack(fill=tk.X, pady=(0, 6))
+
         # AI问答页面按钮
         self.nav_chat_btn = tk.Button(
             nav_container,
             text="AI 问答",
             command=self._show_chat_page,
-            bg=UI_BG,
+            bg=UI_CARD,
             fg=UI_TEXT_MUTED,
             **nav_btn_style,
         )
-        self.nav_chat_btn.pack(side=tk.LEFT, padx=(0, 6))
-        
+        self.nav_chat_btn.pack(fill=tk.X, pady=(0, 6))
+
         # 多模态文档处理页面按钮
         self.nav_multimodal_btn = tk.Button(
             nav_container,
             text="文档处理",
             command=self._show_multimodal_page,
-            bg=UI_BG,
+            bg=UI_CARD,
             fg=UI_TEXT_MUTED,
             **nav_btn_style,
         )
-        self.nav_multimodal_btn.pack(side=tk.LEFT, padx=(0, 6))
-        
+        self.nav_multimodal_btn.pack(fill=tk.X)
+
+        self.nav_settings_btn = tk.Button(
+            nav_container,
+            text="设置",
+            command=self._show_settings_page,
+            bg=UI_CARD,
+            fg=UI_TEXT_MUTED,
+            **nav_btn_style,
+        )
+        self.nav_settings_btn.pack(fill=tk.X, pady=(6, 0))
+
         # 页面内容容器
-        self.content_frame = tk.Frame(main_container, bg=UI_BG)
-        self.content_frame.pack(fill=tk.BOTH, expand=True)
+        self.content_frame = tk.Frame(body_frame, bg=UI_BG)
+        self.content_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
         # 创建视频处理页面
         self.video_page = tk.Frame(self.content_frame, bg=UI_BG)
         self.video_page.pack(fill=tk.BOTH, expand=True)
+        self.video_page_body = self._create_scrollable_page(self.video_page)
         
+        # 创建任务编排页面（初始隐藏）
+        self.orchestration_page = tk.Frame(self.content_frame, bg=UI_BG)
+        self.orchestration_page_body = self._create_scrollable_page(self.orchestration_page)
+
         # 创建AI问答页面（初始隐藏）
         self.chat_page = tk.Frame(self.content_frame, bg=UI_BG)
         
         # 创建多模态文档处理页面（初始隐藏）
         self.multimodal_page = None
+
+        # 创建设置页面（初始隐藏）
+        self.settings_page = tk.Frame(self.content_frame, bg=UI_BG)
+        self.settings_page_body = self._create_scrollable_page(self.settings_page)
         
         # 构建视频处理页面内容
-        self._build_video_page(self.video_page)
+        self._build_video_page(self.video_page_body)
+
+        # 构建任务编排页面内容
+        self._build_orchestration_page(self.orchestration_page_body)
         
         # 构建AI问答页面内容
         self._build_chat_page(self.chat_page)
+
+        # 构建设置页面内容
+        self._build_settings_page(self.settings_page_body)
+
+    def _create_scrollable_page(self, parent):
+        """为长页面创建可滚动容器（1K屏可用）。"""
+        canvas = tk.Canvas(parent, bg=UI_BG, highlightthickness=0, bd=0)
+        vbar = ttk.Scrollbar(parent, orient=tk.VERTICAL, command=canvas.yview)
+        canvas.configure(yscrollcommand=vbar.set)
+        vbar.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        inner = tk.Frame(canvas, bg=UI_BG)
+        win = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+        def _on_frame_config(_event=None):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def _on_canvas_config(event):
+            canvas.itemconfigure(win, width=event.width)
+
+        inner.bind("<Configure>", _on_frame_config)
+        canvas.bind("<Configure>", _on_canvas_config)
+
+        def _on_mousewheel(event):
+            delta = -1 if event.delta < 0 else 1
+            canvas.yview_scroll(-delta, "units")
+
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        return inner
         
     def _build_video_page(self, parent):
-        """构建视频处理页面"""
+        """构建链接文档化页面"""
+        left_col = tk.Frame(parent, bg=UI_BG)
+        left_col.pack(fill=tk.BOTH, expand=True)
+
         # 核心功能区域
-        core_frame = tk.Frame(parent, bg=UI_BG)
+        core_frame = tk.Frame(left_col, bg=UI_BG)
         core_frame.pack(fill=tk.X, pady=(0, 12))
         
         # 视频链接输入区域
@@ -2494,6 +3350,31 @@ class App:
             bg=UI_CARD,
         )
         link_label.pack(side=tk.LEFT, padx=(14, 10), pady=14)
+
+        # 左侧：流程选择（从右侧整块迁移至此）
+        self.workflow_select_var = tk.StringVar(value="")
+        self.workflow_select = ttk.Combobox(
+            link_frame,
+            textvariable=self.workflow_select_var,
+            state="readonly",
+            width=28,
+        )
+        self.workflow_select.pack(side=tk.LEFT, padx=(0, 8), pady=12)
+
+        self.workflow_run_btn = tk.Button(
+            link_frame,
+            text="执行流程",
+            command=self.run_selected_workflow,
+            bg=UI_ACCENT,
+            fg="#ffffff",
+            font=("Microsoft YaHei UI", 9, "bold"),
+            relief=tk.FLAT,
+            padx=10,
+            pady=4,
+            activebackground="#1d4ed8",
+            activeforeground="#ffffff",
+        )
+        self.workflow_run_btn.pack(side=tk.LEFT, padx=(0, 8), pady=12)
         
         self.link_entry = tk.Entry(
             link_frame,
@@ -2506,6 +3387,56 @@ class App:
             highlightthickness=0,
         )
         self.link_entry.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True, pady=15)
+
+        # 工作流选择器（默认：链接文档化流程）
+        self.workflow_selector_var = tk.StringVar(value="default_video")
+        self.workflow_selector = ttk.Combobox(
+            link_frame,
+            textvariable=self.workflow_selector_var,
+            state="readonly",
+            width=20,
+        )
+        self.refresh_workflow_selector()
+        self.workflow_selector.pack(side=tk.LEFT, padx=(8, 8), pady=12)
+        
+        # 多模态文件输入（默认隐藏，仅在多模态工作流时显示）
+        self.multimodal_file_var = tk.StringVar(value="")
+        self.multimodal_file_entry = tk.Entry(
+            link_frame,
+            textvariable=self.multimodal_file_var,
+            font=("Microsoft YaHei UI", 9),
+            bd=1,
+            relief=tk.FLAT,
+            highlightthickness=1,
+            highlightbackground=UI_BORDER,
+            bg=UI_LOG_BG,
+            fg=UI_TEXT,
+            width=22,
+        )
+        self.multimodal_file_browse_btn = tk.Button(
+            link_frame,
+            text="选择文件",
+            command=self._browse_workflow_multimodal_file,
+            bg=UI_CARD,
+            fg=UI_ACCENT,
+            relief=tk.FLAT,
+            padx=6,
+            pady=4,
+        )
+        self.multimodal_text_var = tk.StringVar(value="")
+        self.multimodal_text_entry = tk.Entry(
+            link_frame,
+            textvariable=self.multimodal_text_var,
+            font=("Microsoft YaHei UI", 9),
+            bd=1,
+            relief=tk.FLAT,
+            highlightthickness=1,
+            highlightbackground=UI_BORDER,
+            bg=UI_LOG_BG,
+            fg=UI_TEXT,
+            width=28,
+        )
+        self.refresh_workflow_selector()
         
         # 飞书同步（链接分析流程：生成 MD 后上传；勾选状态写入 config.json）
         feishu_quick_frame = tk.Frame(core_frame, bg=UI_CARD, bd=0, relief=tk.FLAT)
@@ -2598,13 +3529,6 @@ class App:
         )
         self.start_btn.pack(side=tk.LEFT, padx=10)
         
-        self.ai_config_btn = ttk.Button(btn_container, text="AI配置", command=self.open_ai_config_window)
-        self.ai_config_btn.pack(side=tk.LEFT, padx=10)
-        
-        # AI API配置按钮（新的API配置界面）
-        self.ai_api_config_btn = ttk.Button(btn_container, text="API设置", command=self.open_ai_api_config_window)
-        self.ai_api_config_btn.pack(side=tk.LEFT, padx=10)
-        
         # 批量导入按钮
         self.batch_import_btn = ttk.Button(btn_container, text="批量导入", command=self.batch_import)
         self.batch_import_btn.pack(side=tk.LEFT, padx=10)
@@ -2613,12 +3537,16 @@ class App:
         self.history_btn = ttk.Button(btn_container, text="历史查询", command=self.show_history)
         self.history_btn.pack(side=tk.LEFT, padx=10)
         
-        # 线程配置按钮
-        self.thread_config_btn = ttk.Button(btn_container, text="线程配置", command=self.open_thread_config_window)
-        self.thread_config_btn.pack(side=tk.LEFT, padx=10)
+        tk.Label(
+            btn_container,
+            text="更多配置请到左侧「设置」菜单",
+            font=("Microsoft YaHei UI", 9),
+            fg=UI_TEXT_MUTED,
+            bg=UI_BG,
+        ).pack(side=tk.LEFT, padx=(12, 0))
         
         # 任务状态区域
-        self.status_frame = tk.Frame(parent, bg=UI_CARD, bd=0, relief=tk.FLAT)
+        self.status_frame = tk.Frame(left_col, bg=UI_CARD, bd=0, relief=tk.FLAT)
         self.status_frame.pack(fill=tk.X, pady=(0, 12))
         self.status_frame.configure(
             bg=UI_CARD,
@@ -2648,7 +3576,7 @@ class App:
         self.queue_status.pack(side=tk.RIGHT, padx=(10, 15), pady=10)
         
         # User Prompt 输入区域
-        user_prompt_frame = tk.Frame(parent, bg=UI_CARD, bd=0, relief=tk.FLAT)
+        user_prompt_frame = tk.Frame(left_col, bg=UI_CARD, bd=0, relief=tk.FLAT)
         user_prompt_frame.pack(fill=tk.X, pady=(0, 12))
         user_prompt_frame.configure(
             bg=UI_CARD,
@@ -2809,7 +3737,7 @@ class App:
         limit_characters()
         
         # 日志区域
-        log_frame = tk.Frame(parent, bg=UI_CARD, bd=0, relief=tk.FLAT)
+        log_frame = tk.Frame(left_col, bg=UI_CARD, bd=0, relief=tk.FLAT)
         log_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 12))
         log_frame.configure(
             bg=UI_CARD,
@@ -2843,9 +3771,39 @@ class App:
             highlightthickness=0,
         )
         self.log.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 15))
+
+        # 流程执行日志：从右侧面板迁移到主流程下方
+        workflow_log_frame = tk.Frame(left_col, bg=UI_CARD, bd=0, relief=tk.FLAT)
+        workflow_log_frame.pack(fill=tk.BOTH, expand=False, pady=(0, 12))
+        workflow_log_frame.configure(
+            bg=UI_CARD,
+            highlightbackground=UI_BORDER,
+            highlightthickness=1,
+            borderwidth=0,
+            highlightcolor=UI_BORDER,
+        )
+        tk.Label(
+            workflow_log_frame,
+            text="任务流程执行日志",
+            font=UI_FONT_BOLD,
+            foreground=UI_TEXT,
+            bg=UI_CARD,
+        ).pack(anchor=tk.W, padx=15, pady=(14, 8))
+        self.workflow_exec_log = scrolledtext.ScrolledText(
+            workflow_log_frame,
+            width=42,
+            height=8,
+            font=("Consolas", 9),
+            bd=0,
+            bg=UI_LOG_BG,
+            fg=UI_TEXT,
+            wrap=tk.WORD,
+            highlightthickness=0,
+        )
+        self.workflow_exec_log.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 12))
         
         # 底部状态区域
-        status_frame = tk.Frame(parent, bg=UI_BG)
+        status_frame = tk.Frame(left_col, bg=UI_BG)
         status_frame.pack(fill=tk.X, pady=(0, 8))
         
         self.status_var = tk.StringVar(value="就绪")
@@ -2882,15 +3840,23 @@ class App:
         def _do():
             self.log.insert(tk.END, line)
             self.log.see(tk.END)
+            # 立即刷新 GUI，避免延迟
+            self.log.update()
             self.root.update_idletasks()
 
-        if threading.current_thread() is threading.main_thread():
-            _do()
-        else:
-            try:
-                self.root.after(0, _do)
-            except Exception:
+        # 始终立即执行，不等待 after 队列
+        try:
+            if threading.current_thread() is threading.main_thread():
                 _do()
+            else:
+                # 非主线程也立即执行，但通过 after 保证线程安全
+                # 【关键修复】直接在当前线程同步写入，不等待事件循环
+                self.log.insert(tk.END, line)
+                self.log.see(tk.END)
+                self.log.update()
+                # 不等待，让事件循环自然处理
+        except Exception:
+            _do()
 
         if self._ops_should_forward_log_to_agent(msg, level):
             threading.Thread(
@@ -3246,7 +4212,12 @@ class App:
 
     def _run_feishu_upload_if_enabled(self, link, md_file, user_prompt, feishu_folder_path=None):
         """生成 MD 后的飞书上传：受全局/任务级同步开关与 AI 配置中的凭证控制。"""
-        if not self._feishu_upload_effective_for_link(link):
+        eff = self._feishu_upload_effective_for_link(link)
+        self.append_log(
+            f"飞书上传判定：effective={eff}（全局 feishu_sync_enabled={bool(CONFIG.get('feishu_sync_enabled', False))}）",
+            "INFO",
+        )
+        if not eff:
             self.append_log("未开启「同步到飞书」，跳过上传步骤", "INFO")
             self.update_task_status(link, "feishu_upload", "completed", "未开启飞书同步")
             return
@@ -3280,7 +4251,11 @@ class App:
                 self.append_log(f"文档已上传到飞书：{doc_token}")
                 self.update_task_status(link, "feishu_upload", "completed", doc_token)
             else:
-                self.append_log("上传到飞书失败")
+                detail = getattr(feishu, "last_error", None)
+                if detail:
+                    self.append_log(f"上传到飞书失败：{detail}", "WARNING")
+                else:
+                    self.append_log("上传到飞书失败（无详细错误信息）", "WARNING")
                 self.update_task_status(link, "feishu_upload", "failed")
         except Exception as e:
             self.append_log(f"飞书上传异常：{e}")
@@ -3308,8 +4283,12 @@ class App:
                     task["user_prompt"] = user_prompt
                 if feishu_folder_path:
                     task["feishu_folder_path"] = feishu_folder_path
-                if feishu_sync_override is not None:
-                    task["feishu_sync_override"] = feishu_sync_override
+                # 允许显式清除任务级覆盖（None 表示回到“跟随全局勾选”）
+                if feishu_sync_override is None:
+                    if "feishu_sync_override" in task:
+                        task.pop("feishu_sync_override", None)
+                else:
+                    task["feishu_sync_override"] = bool(feishu_sync_override)
                 task["updated_at"] = datetime.now().isoformat()
                 save_history(self.history)
                 return task
@@ -3364,8 +4343,846 @@ class App:
         return False
     
     # 页面切换方法
+    def _set_nav_active(self, active: str):
+        mapping = {
+            "video": getattr(self, "nav_video_btn", None),
+            "orchestration": getattr(self, "nav_orchestration_btn", None),
+            "chat": getattr(self, "nav_chat_btn", None),
+            "multimodal": getattr(self, "nav_multimodal_btn", None),
+            "settings": getattr(self, "nav_settings_btn", None),
+        }
+        for key, btn in mapping.items():
+            if not btn:
+                continue
+            if key == active:
+                btn.configure(bg=UI_ACCENT_SOFT, fg=UI_ACCENT)
+            else:
+                btn.configure(bg=UI_CARD, fg=UI_TEXT_MUTED)
+
+    def _build_orchestration_page(self, parent):
+        """构建任务编排页面（独立母菜单）。"""
+        wrap = tk.Frame(parent, bg=UI_CARD, highlightbackground=UI_BORDER, highlightthickness=1, bd=0)
+        wrap.pack(fill=tk.BOTH, expand=True)
+
+        tk.Label(
+            wrap,
+            text="任务编排",
+            font=("Microsoft YaHei UI", 16, "bold"),
+            fg=UI_TEXT,
+            bg=UI_CARD,
+        ).pack(anchor=tk.W, padx=16, pady=(16, 6))
+
+        tk.Label(
+            wrap,
+            text="本页用于本地任务编排配置。你可以按节点配置输入参数、控制节点启停，并导出节点文档。",
+            font=UI_FONT,
+            fg=UI_TEXT_MUTED,
+            bg=UI_CARD,
+        ).pack(anchor=tk.W, padx=16, pady=(0, 14))
+
+        action_row = tk.Frame(wrap, bg=UI_CARD)
+        action_row.pack(fill=tk.X, padx=16, pady=(0, 10))
+        tk.Button(
+            action_row,
+            text="打开任务节点中心",
+            command=self.open_task_node_center_window,
+            bg=UI_ACCENT,
+            fg="#ffffff",
+            font=UI_FONT_BOLD,
+            relief=tk.FLAT,
+            cursor="hand2",
+            padx=18,
+            pady=6,
+            activebackground="#1d4ed8",
+            activeforeground="#ffffff",
+            bd=0,
+        ).pack(side=tk.LEFT)
+        tk.Button(
+            action_row,
+            text="打开流程设计器",
+            command=self.open_workflow_designer_window,
+            bg=UI_CARD,
+            fg=UI_ACCENT,
+            font=UI_FONT_BOLD,
+            relief=tk.FLAT,
+            cursor="hand2",
+            padx=16,
+            pady=6,
+            activebackground=UI_ACCENT_SOFT,
+            activeforeground=UI_ACCENT,
+            bd=0,
+        ).pack(side=tk.LEFT, padx=(8, 0))
+
+        tip_text = (
+            "默认节点包括：下载视频、语音转文字、AI总结、生成Markdown、Agent处理节点、单独同步飞书。\n"
+            "说明：原固定流程保留不变；本地任务编排作为并行扩展能力。"
+        )
+        tk.Label(
+            wrap,
+            text=tip_text,
+            justify=tk.LEFT,
+            font=("Microsoft YaHei UI", 9),
+            fg=UI_TEXT_LIGHT,
+            bg=UI_CARD,
+        ).pack(anchor=tk.W, padx=16, pady=(6, 0))
+
+        runtime = tk.Frame(wrap, bg=UI_CARD, highlightbackground=UI_BORDER, highlightthickness=1, bd=0)
+        runtime.pack(fill=tk.X, padx=16, pady=(14, 10))
+        tk.Label(
+            runtime,
+            text="流程运行（轻量编排）",
+            font=UI_FONT_BOLD,
+            fg=UI_TEXT,
+            bg=UI_CARD,
+        ).pack(anchor=tk.W, padx=12, pady=(10, 8))
+
+        row = tk.Frame(runtime, bg=UI_CARD)
+        row.pack(fill=tk.X, padx=12, pady=(0, 10))
+        tk.Label(row, text="选择流程", font=UI_FONT, fg=UI_TEXT_MUTED, bg=UI_CARD).pack(side=tk.LEFT)
+        self.orch_workflow_var = tk.StringVar(value="")
+        self.orch_workflow_select = ttk.Combobox(row, textvariable=self.orch_workflow_var, state="readonly", width=36)
+        self.orch_workflow_select.pack(side=tk.LEFT, padx=(8, 10))
+        tk.Button(
+            row,
+            text="执行一次",
+            command=self.run_selected_workflow,
+            bg=UI_ACCENT,
+            fg="#ffffff",
+            relief=tk.FLAT,
+            padx=12,
+            pady=4,
+        ).pack(side=tk.LEFT, padx=(0, 8))
+        tk.Button(
+            row,
+            text="从失败节点续跑",
+            command=self.resume_selected_workflow_from_failed,
+            bg=UI_CARD,
+            fg=UI_ACCENT,
+            relief=tk.FLAT,
+            padx=10,
+            pady=4,
+        ).pack(side=tk.LEFT, padx=(0, 8))
+        tk.Button(
+            row,
+            text="停止当前运行",
+            command=self.stop_current_workflow_run,
+            bg=UI_CARD,
+            fg="#b91c1c",
+            relief=tk.FLAT,
+            padx=10,
+            pady=4,
+        ).pack(side=tk.LEFT)
+
+        scheduler = tk.Frame(runtime, bg=UI_CARD)
+        scheduler.pack(fill=tk.X, padx=12, pady=(0, 10))
+        self.workflow_scheduler_enabled_var = tk.BooleanVar(value=bool(CONFIG.get("workflow_scheduler_enabled", False)))
+        self.workflow_scheduler_interval_var = tk.StringVar(value=str(CONFIG.get("workflow_scheduler_interval_min", 30)))
+        self.workflow_scheduler_status_var = tk.StringVar(value="定时器状态：未启动")
+        tk.Checkbutton(
+            scheduler,
+            text="启用定时执行",
+            variable=self.workflow_scheduler_enabled_var,
+            bg=UI_CARD,
+            fg=UI_TEXT,
+            selectcolor=UI_CARD,
+            activebackground=UI_CARD,
+            highlightthickness=0,
+        ).pack(side=tk.LEFT)
+        tk.Label(scheduler, text="间隔(分钟)", font=UI_FONT, fg=UI_TEXT_MUTED, bg=UI_CARD).pack(side=tk.LEFT, padx=(10, 6))
+        tk.Entry(
+            scheduler,
+            textvariable=self.workflow_scheduler_interval_var,
+            width=6,
+            font=UI_FONT,
+            bd=1,
+            relief=tk.FLAT,
+            highlightthickness=1,
+            highlightbackground=UI_BORDER,
+            bg=UI_LOG_BG,
+            fg=UI_TEXT,
+        ).pack(side=tk.LEFT)
+        tk.Button(
+            scheduler,
+            text="保存并启动",
+            command=self.save_and_start_workflow_scheduler,
+            bg=UI_ACCENT,
+            fg="#ffffff",
+            relief=tk.FLAT,
+            padx=10,
+            pady=4,
+        ).pack(side=tk.LEFT, padx=(10, 8))
+        tk.Button(
+            scheduler,
+            text="停止定时器",
+            command=self.stop_workflow_scheduler,
+            bg=UI_CARD,
+            fg="#b91c1c",
+            relief=tk.FLAT,
+            padx=10,
+            pady=4,
+        ).pack(side=tk.LEFT)
+        tk.Label(runtime, textvariable=self.workflow_scheduler_status_var, font=("Microsoft YaHei UI", 9), fg=UI_TEXT_LIGHT, bg=UI_CARD).pack(anchor=tk.W, padx=12, pady=(0, 10))
+
+    def _build_settings_page(self, parent):
+        """构建统一设置菜单（与散落设置共享同一份配置数据）。"""
+        wrap = tk.Frame(parent, bg=UI_CARD, highlightbackground=UI_BORDER, highlightthickness=1, bd=0)
+        wrap.pack(fill=tk.BOTH, expand=True)
+
+        tk.Label(
+            wrap,
+            text="设置中心",
+            font=("Microsoft YaHei UI", 16, "bold"),
+            fg=UI_TEXT,
+            bg=UI_CARD,
+        ).pack(anchor=tk.W, padx=16, pady=(16, 6))
+
+        tk.Label(
+            wrap,
+            text="以下设置入口共用同一套 config.json / MariaDB 配置数据，不存在多份配置。",
+            font=UI_FONT,
+            fg=UI_TEXT_MUTED,
+            bg=UI_CARD,
+        ).pack(anchor=tk.W, padx=16, pady=(0, 12))
+
+        btn_row = tk.Frame(wrap, bg=UI_CARD)
+        btn_row.pack(fill=tk.X, padx=16, pady=(0, 12))
+
+        ttk.Button(btn_row, text="AI配置", command=self.open_ai_config_window).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(btn_row, text="API设置", command=self.open_ai_api_config_window).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(btn_row, text="线程配置", command=self.open_thread_config_window).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(btn_row, text="任务节点中心", command=self.open_task_node_center_window).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(btn_row, text="流程设计器", command=self.open_workflow_designer_window).pack(side=tk.LEFT)
+
+        info = tk.Frame(wrap, bg=UI_LOG_BG, highlightbackground=UI_BORDER, highlightthickness=1, bd=0)
+        info.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 16))
+
+        tk.Label(
+            info,
+            text=f"产品版本：{APP_VERSION}",
+            font=("Consolas", 10, "bold"),
+            fg=UI_TEXT,
+            bg=UI_LOG_BG,
+        ).pack(anchor=tk.W, padx=12, pady=(10, 4))
+
+        tk.Label(
+            info,
+            text="更新日志：",
+            font=UI_FONT_BOLD,
+            fg=UI_TEXT,
+            bg=UI_LOG_BG,
+        ).pack(anchor=tk.W, padx=12, pady=(0, 4))
+
+        for item in APP_CHANGELOG:
+            tk.Label(
+                info,
+                text=f"- {item}",
+                justify=tk.LEFT,
+                anchor="w",
+                font=UI_FONT,
+                fg=UI_TEXT_MUTED,
+                bg=UI_LOG_BG,
+            ).pack(fill=tk.X, padx=16, pady=1)
+
+    def refresh_workflow_selector(self):
+        defs = (CONFIG.get("local_workflow_definitions") or {}) if isinstance(CONFIG, dict) else {}
+        # 自动注入默认流程，避免下拉为空，且保证多模态流程始终可选
+        if isinstance(CONFIG, dict):
+            if not defs:
+                defs = {}
+            if "default_video_flow" not in defs:
+                defs["default_video_flow"] = {
+                    "name": "默认链接文档化流程",
+                    "nodes": [
+                        {"node_id": "download_video", "config": {}},
+                        {"node_id": "speech_to_text", "config": {}},
+                        {"node_id": "summarize_content", "config": {}},
+                        {"node_id": "generate_markdown", "config": {}},
+                    ],
+                }
+            if "default_multimodal_flow" not in defs:
+                defs["default_multimodal_flow"] = {
+                    "name": "默认多模态文档化流程",
+                    "nodes": [
+                        {"node_id": "multimodal_to_text", "config": {}},
+                        {"node_id": "summarize_content", "config": {}},
+                        {"node_id": "generate_markdown", "config": {"platform": "多模态文档"}},
+                    ],
+                }
+            CONFIG["local_workflow_definitions"] = defs
+            save_config(CONFIG)
+        if not hasattr(self, "workflow_select"):
+            return
+        items = [f"{wf.get('name', k)} ({k})" for k, wf in defs.items()]
+        self.workflow_select["values"] = items
+        if items and not self.workflow_select_var.get():
+            self.workflow_select_var.set(items[0])
+        if hasattr(self, "orch_workflow_select"):
+            self.orch_workflow_select["values"] = items
+            if items and not getattr(self, "orch_workflow_var", tk.StringVar(value="")).get():
+                self.orch_workflow_var.set(items[0])
+
+    def _append_workflow_exec_log(self, text: str):
+        ts = datetime.now().strftime("%H:%M:%S")
+        line = f"[{ts}] {text}\n"
+
+        def _do():
+            if hasattr(self, "workflow_exec_log"):
+                self.workflow_exec_log.insert(tk.END, line)
+                self.workflow_exec_log.see(tk.END)
+
+        if threading.current_thread() is threading.main_thread():
+            _do()
+        else:
+            self.root.after(0, _do)
+
+    def _browse_workflow_multimodal_file(self):
+        file_path = filedialog.askopenfilename(
+            title="选择多模态文件",
+            filetypes=[
+                ("支持文件", "*.pdf *.doc *.docx *.md *.markdown *.txt *.jpg *.jpeg *.png *.webp *.bmp"),
+                ("所有文件", "*.*"),
+            ],
+        )
+        if file_path:
+            self.multimodal_file_var.set(file_path)
+
+    def _resolve_selected_workflow(self):
+        label = (self.workflow_select_var.get() or "").strip()
+        return self._resolve_workflow_by_label(label)
+
+    def _resolve_workflow_by_label(self, label: str):
+        defs = (CONFIG.get("local_workflow_definitions") or {}) if isinstance(CONFIG, dict) else {}
+        if not label or not defs:
+            return None, None
+        wf_id = None
+        if label.endswith(")") and "(" in label:
+            wf_id = label[label.rfind("(") + 1 : -1]
+        if wf_id and wf_id in defs:
+            return wf_id, defs[wf_id]
+        for k, wf in defs.items():
+            if wf.get("name") == label:
+                return k, wf
+        return None, None
+
+    def _collect_workflow_run_payload(self):
+        link = (self.link_var.get() or "").strip()
+        multimodal_file = (self.multimodal_file_var.get() or "").strip() if hasattr(self, "multimodal_file_var") else ""
+        multimodal_text = (self.multimodal_text_var.get() or "").strip() if hasattr(self, "multimodal_text_var") else ""
+        input_mode = "video_link"
+        if multimodal_file:
+            input_mode = "multimodal_file"
+        elif multimodal_text:
+            input_mode = "plain_text"
+        return link, multimodal_file, multimodal_text, input_mode
+
+    def run_selected_workflow(self):
+        link, multimodal_file, multimodal_text, input_mode = self._collect_workflow_run_payload()
+        # 验证输入：至少需要一个输入
+        if not link and not multimodal_file and not multimodal_text:
+            messagebox.showwarning("提示", "请输入视频链接、选择文件或输入文本。")
+            return
+        selected_label = (self.workflow_select_var.get() or "").strip()
+        orch_label = (self.orch_workflow_var.get() or "").strip() if hasattr(self, "orch_workflow_var") else ""
+        wf_id, wf = self._resolve_workflow_by_label(orch_label or selected_label)
+        if not wf:
+            messagebox.showwarning("提示", "请先在任务编排中创建并选择一个流程。")
+            return
+        self._start_workflow_run(wf_id, wf, link, input_mode, multimodal_file, multimodal_text, start_index=0)
+
+    def _start_workflow_run(self, wf_id, wf, link, input_mode, multimodal_file, multimodal_text, start_index=0):
+        with self._workflow_run_lock:
+            if self._workflow_running:
+                self._append_workflow_exec_log("已有流程正在运行，请先停止或等待完成。")
+                return False
+            self._workflow_running = True
+            self._workflow_stop_event.clear()
+        if hasattr(self, "workflow_run_btn"):
+            self.workflow_run_btn.config(state=tk.DISABLED)
+        self._append_workflow_exec_log(f"开始执行流程：{wf.get('name', wf_id)}（起始节点={start_index + 1}）")
+        t = threading.Thread(
+            target=self._run_selected_workflow_thread,
+            args=(wf_id, wf, link, input_mode, multimodal_file, multimodal_text, start_index),
+            daemon=True,
+        )
+        t.start()
+        return True
+
+    def _run_selected_workflow_thread(self, wf_id, wf, link, input_mode, multimodal_file, multimodal_text, start_index=0):
+        user_prompt = (self.user_prompt_var.get() or "").strip() if hasattr(self, "user_prompt_var") else ""
+        feishu_folder_path = self._resolve_feishu_folder_for_task()
+        ctx = {
+            "link": link,
+            "input_mode": input_mode,
+            "input_file": multimodal_file,
+            "input_text": multimodal_text,
+            "user_prompt": user_prompt,
+            "feishu_folder_path": feishu_folder_path,
+            "previous_output": {},
+            "result_data": {},
+        }
+        try:
+            nodes = list((wf or {}).get("nodes") or [])
+            if not nodes:
+                self._append_workflow_exec_log("流程无节点，执行结束。")
+                return
+            if start_index < 0:
+                start_index = 0
+            for idx, step in enumerate(nodes[start_index:], start=start_index + 1):
+                if self._workflow_stop_event.is_set():
+                    self._append_workflow_exec_log("流程被手动停止。")
+                    self._workflow_last_run_state[wf_id] = {"failed_index": idx - 1, "reason": "stopped"}
+                    return
+                node_id = (step or {}).get("node_id") or ""
+                node_cfg = (step or {}).get("config") or {}
+                self._append_workflow_exec_log(f"节点 {idx}/{len(nodes)} 开始：{node_id}")
+                out = self._execute_workflow_node(node_id, node_cfg, ctx)
+                ctx["previous_output"] = out or {}
+                if isinstance(out, dict) and out.get("result_data"):
+                    ctx["result_data"] = out.get("result_data")
+                summary = out.get("status", "ok") if isinstance(out, dict) else "ok"
+                self._append_workflow_exec_log(f"节点 {idx} 完成：{node_id} -> {summary}")
+                if isinstance(out, dict) and out.get("status") in ("failed", "rejected"):
+                    self._workflow_last_run_state[wf_id] = {"failed_index": idx - 1, "reason": out.get("message") or out.get("status")}
+                    self._append_workflow_exec_log(f"流程中断：节点 {idx} 返回 {out.get('status')}")
+                    return
+            self._workflow_last_run_state[wf_id] = {"failed_index": None, "reason": ""}
+            self._append_workflow_exec_log(f"流程执行完成：{wf.get('name', wf_id)}")
+        except Exception as e:
+            failed_index = 0
+            try:
+                failed_index = max(0, idx - 1)
+            except Exception:
+                failed_index = 0
+            self._workflow_last_run_state[wf_id] = {"failed_index": failed_index, "reason": str(e)}
+            self._append_workflow_exec_log(f"流程执行失败：{type(e).__name__}: {e}")
+        finally:
+            with self._workflow_run_lock:
+                self._workflow_running = False
+            if hasattr(self, "workflow_run_btn"):
+                self.root.after(0, lambda: self.workflow_run_btn.config(state=tk.NORMAL))
+
+    def resume_selected_workflow_from_failed(self):
+        selected_label = (self.orch_workflow_var.get() or self.workflow_select_var.get() or "").strip() if hasattr(self, "workflow_select_var") else ""
+        wf_id, wf = self._resolve_workflow_by_label(selected_label)
+        if not wf:
+            messagebox.showwarning("提示", "请先选择一个流程。")
+            return
+        st = self._workflow_last_run_state.get(wf_id) or {}
+        failed_index = st.get("failed_index")
+        if failed_index is None:
+            self._append_workflow_exec_log("该流程最近无失败节点，无需续跑。")
+            return
+        link, multimodal_file, multimodal_text, input_mode = self._collect_workflow_run_payload()
+        if not link and not multimodal_file and not multimodal_text:
+            messagebox.showwarning("提示", "续跑前请提供输入：链接、文件或文本。")
+            return
+        self._start_workflow_run(wf_id, wf, link, input_mode, multimodal_file, multimodal_text, start_index=int(failed_index))
+
+    def stop_current_workflow_run(self):
+        self._workflow_stop_event.set()
+        self._append_workflow_exec_log("已发送停止信号，当前节点结束后将停止流程。")
+
+    def save_and_start_workflow_scheduler(self):
+        global CONFIG
+        try:
+            interval_min = int((self.workflow_scheduler_interval_var.get() or "30").strip())
+            if interval_min <= 0:
+                raise ValueError("间隔必须为正整数")
+        except Exception:
+            messagebox.showwarning("提示", "定时间隔请输入正整数（分钟）。")
+            return
+        selected_label = (self.orch_workflow_var.get() or self.workflow_select_var.get() or "").strip() if hasattr(self, "workflow_select_var") else ""
+        wf_id, _wf = self._resolve_workflow_by_label(selected_label)
+        if not wf_id:
+            messagebox.showwarning("提示", "请先选择一个流程用于定时执行。")
+            return
+        CONFIG["workflow_scheduler_enabled"] = bool(self.workflow_scheduler_enabled_var.get())
+        CONFIG["workflow_scheduler_interval_min"] = interval_min
+        CONFIG["workflow_scheduler_workflow_id"] = wf_id
+        save_config(CONFIG)
+        self._start_workflow_scheduler()
+
+    def _start_workflow_scheduler(self):
+        self._workflow_scheduler_stop_event.set()
+        self._workflow_scheduler_stop_event = threading.Event()
+        t = threading.Thread(target=self._workflow_scheduler_loop, daemon=True)
+        self._workflow_scheduler_thread = t
+        t.start()
+        if hasattr(self, "workflow_scheduler_status_var"):
+            self.workflow_scheduler_status_var.set("定时器状态：运行中")
+        self._append_workflow_exec_log("定时器已启动。")
+
+    def stop_workflow_scheduler(self):
+        self._workflow_scheduler_stop_event.set()
+        if hasattr(self, "workflow_scheduler_status_var"):
+            self.workflow_scheduler_status_var.set("定时器状态：已停止")
+        self._append_workflow_exec_log("定时器已停止。")
+
+    def _workflow_scheduler_loop(self):
+        while not self._workflow_scheduler_stop_event.is_set():
+            try:
+                if not bool(CONFIG.get("workflow_scheduler_enabled", False)):
+                    if self._workflow_scheduler_stop_event.wait(2.0):
+                        break
+                    continue
+                wf_id = (CONFIG.get("workflow_scheduler_workflow_id") or "").strip()
+                defs = (CONFIG.get("local_workflow_definitions") or {}) if isinstance(CONFIG, dict) else {}
+                wf = defs.get(wf_id)
+                interval_min = int(CONFIG.get("workflow_scheduler_interval_min", 30) or 30)
+                if wf:
+                    link, multimodal_file, multimodal_text, input_mode = self._collect_workflow_run_payload()
+                    if link or multimodal_file or multimodal_text:
+                        self._start_workflow_run(wf_id, wf, link, input_mode, multimodal_file, multimodal_text, start_index=0)
+                    else:
+                        self._append_workflow_exec_log("定时器跳过：当前无输入（请填写链接/文件/文本）。")
+                wait_sec = max(60, interval_min * 60)
+                if self._workflow_scheduler_stop_event.wait(wait_sec):
+                    break
+            except Exception as e:
+                self._append_workflow_exec_log(f"定时器异常：{type(e).__name__}: {e}")
+                if self._workflow_scheduler_stop_event.wait(10.0):
+                    break
+
+    def _get_workflow_node_tools(self):
+        """任务节点工具注册表（tool 化封装，固定流程并行保留）。"""
+        tools = getattr(self, "_workflow_node_tools", None)
+        if isinstance(tools, dict) and tools:
+            return tools
+        self._workflow_node_tools = {
+            "download_video": self._tool_node_download_video,
+            "download_video_strict": self._tool_node_download_video_strict,
+            "link_multimodal_pipeline": self._tool_node_link_multimodal_pipeline,
+            "multimodal_to_text": self._tool_node_multimodal_to_text,
+            "speech_to_text": self._tool_node_speech_to_text,
+            "summarize_content": self._tool_node_summarize_content,
+            "generate_markdown": self._tool_node_generate_markdown,
+            "template_controlled_doc_generation": self._tool_node_template_controlled_doc_generation,
+            "image_ocr_to_text": self._tool_node_image_ocr_to_text,
+            "sync_feishu_only": self._tool_node_sync_feishu_only,
+            "agent_process": self._tool_node_agent_process,
+        }
+        return self._workflow_node_tools
+
+    def _execute_workflow_node(self, node_id: str, node_cfg: dict, ctx: dict) -> dict:
+        node_id = (node_id or "").strip()
+        tool = self._get_workflow_node_tools().get(node_id)
+        if not tool:
+            return {"status": "skipped", "node_id": node_id}
+        return tool(node_cfg or {}, ctx or {})
+
+    def _tool_node_download_video(self, node_cfg: dict, ctx: dict) -> dict:
+        if (ctx.get("input_mode") or "video_link") != "video_link":
+            return {"status": "skipped", "reason": "当前输入模态非视频链接，跳过下载节点"}
+        link = ctx["link"]
+        try:
+            from link_analyzer import LinkAnalyzer
+            analyzer = LinkAnalyzer()
+            result = analyzer.analyze_link(link)
+            content_type = result.get("type", "") if result else ""
+            if content_type in ("video", "xiaohongshu_video"):
+                self.append_log(f"检测到视频链接，类型：{content_type}")
+                video_file = self.download_video(link)
+            elif content_type == "xiaohongshu":
+                self.append_log("检测到小红书图文，走图文分析流程")
+                self._run_xiaohongshu_analysis(
+                    link,
+                    ctx.get("user_prompt", ""),
+                    ctx.get("feishu_folder_path"),
+                    analyzed_result=result,
+                )
+                return {"status": "success", "content_type": "xiaohongshu", "result_data": result}
+            elif content_type == "douyin_image":
+                self.append_log("检测到抖音图文，走图文分析流程")
+                self.append_log("抖音图文分析暂未实现，回退到视频下载")
+                video_file = self.download_video(link)
+            else:
+                self.append_log(f"未知链接类型 {content_type}，尝试视频下载")
+                video_file = self.download_video(link)
+            if not video_file:
+                raise RuntimeError("下载视频失败")
+            return {"status": "success", "video_file": video_file}
+        except Exception as e:
+            self.append_log(f"链接分析失败：{e}")
+            video_file = self.download_video(link)
+            if not video_file:
+                raise RuntimeError("下载视频失败")
+            return {"status": "success", "video_file": video_file}
+
+    def _tool_node_download_video_strict(self, node_cfg: dict, ctx: dict) -> dict:
+        """
+        严格视频下载工具：
+        - 仅接受视频链接
+        - 非视频类型直接返回提示，不执行下载
+        """
+        if (ctx.get("input_mode") or "video_link") != "video_link":
+            return {"status": "skipped", "reason": "当前输入模态非视频链接，跳过严格下载节点"}
+        link = (node_cfg.get("link") or ctx.get("link") or "").strip()
+        if not link:
+            raise RuntimeError("严格视频下载缺少 link")
+        from link_analyzer import LinkAnalyzer
+
+        analyzer = LinkAnalyzer()
+        result = analyzer.analyze_link(link) or {}
+        content_type = (result.get("type") or "").strip()
+        normalized_link = (result.get("url") or link).strip()
+        if content_type not in ("video", "xiaohongshu_video"):
+            return {
+                "status": "rejected",
+                "is_video": False,
+                "content_type": content_type or "unknown",
+                "normalized_link": normalized_link,
+                "message": "当前链接不包含可下载视频，已拒绝下载",
+            }
+        video_file = self.download_video(normalized_link)
+        if not video_file:
+            raise RuntimeError("下载视频失败")
+        return {
+            "status": "success",
+            "is_video": True,
+            "content_type": content_type,
+            "normalized_link": normalized_link,
+            "video_file": video_file,
+        }
+
+    def _tool_node_link_multimodal_pipeline(self, node_cfg: dict, ctx: dict) -> dict:
+        """
+        链接输入多模态工具（规则路由，不由LLM控制）：
+        识别源头 -> 规范化链接 -> 路由到视频下载/图文分析 -> 文档化。
+        """
+        link = (node_cfg.get("link") or ctx.get("link") or "").strip()
+        if not link:
+            raise RuntimeError("链接多模态工具缺少 link")
+        from link_analyzer import LinkAnalyzer
+
+        analyzer = LinkAnalyzer()
+        result = analyzer.analyze_link(link) or {}
+        content_type = (result.get("type") or "").strip()
+        normalized_link = (result.get("url") or link).strip()
+        user_prompt = (ctx.get("user_prompt") or "").strip()
+        feishu_folder_path = ctx.get("feishu_folder_path")
+
+        if content_type in ("video", "xiaohongshu_video"):
+            video_file = self.download_video(normalized_link)
+            if not video_file:
+                raise RuntimeError("链接路由到视频下载失败")
+            result_data = self.speech_to_text(video_file, user_prompt)
+            if not result_data:
+                raise RuntimeError("链接路由到语音转文字失败")
+            summary = self.summarize_with_volcengine(result_data.get("transcript", ""), user_prompt)
+            if not summary:
+                raise RuntimeError("链接路由到AI总结失败")
+            result_data["ai_summary"] = summary
+            md_file = self.generate_md(result_data, normalized_link, self._detect_platform(normalized_link))
+            if not md_file:
+                raise RuntimeError("链接路由到文档化失败")
+            return {
+                "status": "success",
+                "route": "video_pipeline",
+                "content_type": content_type,
+                "normalized_link": normalized_link,
+                "video_file": video_file,
+                "md_file": md_file,
+                "result_data": result_data,
+            }
+
+        if content_type == "xiaohongshu":
+            self._run_xiaohongshu_analysis(
+                normalized_link,
+                user_prompt,
+                feishu_folder_path,
+                analyzed_result=result,
+            )
+            return {
+                "status": "success",
+                "route": "xiaohongshu_graphic_pipeline",
+                "content_type": content_type,
+                "normalized_link": normalized_link,
+                "result_data": result,
+            }
+
+        if content_type == "douyin_image":
+            return {
+                "status": "rejected",
+                "route": "unsupported_graphic",
+                "content_type": content_type,
+                "normalized_link": normalized_link,
+                "message": "抖音图文暂不支持该链路文档化，请改用多模态文件/文本输入",
+            }
+
+        return {
+            "status": "rejected",
+            "route": "unknown",
+            "content_type": content_type or "unknown",
+            "normalized_link": normalized_link,
+            "message": "未识别为可处理链接类型",
+        }
+
+    def _tool_node_multimodal_to_text(self, node_cfg: dict, ctx: dict) -> dict:
+        mode = (ctx.get("input_mode") or "video_link").strip()
+        if mode == "plain_text":
+            text = (ctx.get("input_text") or "").strip()
+            if not text:
+                raise RuntimeError("多模态转文本失败：plain_text 为空")
+            rd = dict(ctx.get("result_data") or {})
+            rd["transcript"] = text
+            rd["source_type"] = "plain_text"
+            return {"status": "success", "result_data": rd, "transcript": text[:500]}
+        if mode == "multimodal_file":
+            file_path = (ctx.get("input_file") or "").strip()
+            if not file_path or not os.path.exists(file_path):
+                raise RuntimeError("多模态转文本失败：文件不存在")
+            if not MINERU_PROCESSOR_AVAILABLE:
+                raise RuntimeError("多模态转文本失败：MinerUProcessor 不可用")
+            proc = MinerUProcessor(output_dir=OUTPUT_DIR)
+            result = proc.process_document(file_path)
+            if not result or not result.success:
+                raise RuntimeError(f"多模态转文本失败：{getattr(result, 'error', 'unknown')}")
+            transcript = (result.content or result.markdown or "").strip()
+            if not transcript:
+                raise RuntimeError("多模态转文本失败：未提取到文本内容")
+            rd = dict(ctx.get("result_data") or {})
+            rd["transcript"] = transcript
+            rd["source_type"] = "multimodal_file"
+            rd["source_file"] = file_path
+            return {"status": "success", "result_data": rd, "transcript": transcript[:500]}
+        return {"status": "skipped", "reason": "当前输入模态为视频链接，跳过多模态转文本节点"}
+
+    def _tool_node_speech_to_text(self, node_cfg: dict, ctx: dict) -> dict:
+        video_file = node_cfg.get("video_file") or ctx.get("previous_output", {}).get("video_file")
+        if not video_file:
+            raise RuntimeError("语音转文字缺少 video_file")
+        result_data = self.speech_to_text(video_file, ctx.get("user_prompt", ""))
+        if not result_data:
+            raise RuntimeError("语音转文字失败")
+        return {"status": "success", "result_data": result_data}
+
+    def _tool_node_summarize_content(self, node_cfg: dict, ctx: dict) -> dict:
+        rd = ctx.get("result_data") or ctx.get("previous_output", {}).get("result_data") or {}
+        transcript = node_cfg.get("transcript") or rd.get("transcript", "")
+        if not transcript:
+            raise RuntimeError("AI总结缺少 transcript")
+        summary = self.summarize_with_volcengine(transcript, ctx.get("user_prompt", ""))
+        if not summary:
+            raise RuntimeError("AI总结失败")
+        rd["ai_summary"] = summary
+        return {"status": "success", "ai_summary": summary, "result_data": rd}
+
+    def _tool_node_generate_markdown(self, node_cfg: dict, ctx: dict) -> dict:
+        rd = ctx.get("result_data") or {}
+        if not rd:
+            raise RuntimeError("生成Markdown缺少 result_data")
+        link_for_md = ctx.get("link") or (ctx.get("input_file") or "multimodal://text")
+        platform = node_cfg.get("platform") or (
+            "多模态文档" if (ctx.get("input_mode") or "video_link") != "video_link" else self._detect_platform(link_for_md)
+        )
+        md_file = self.generate_md(rd, link_for_md, platform)
+        if not md_file:
+            raise RuntimeError("生成Markdown失败")
+        return {"status": "success", "md_file": md_file}
+
+    def _tool_node_template_controlled_doc_generation(self, node_cfg: dict, ctx: dict) -> dict:
+        """
+        原始文档处理控制模板生成：
+        - 输入原始文本 + 模板 + prompt
+        - 调用LLM按模板生成文档
+        """
+        raw_text = (node_cfg.get("raw_text") or ctx.get("input_text") or "").strip()
+        if not raw_text:
+            rd = ctx.get("result_data") or {}
+            raw_text = (rd.get("transcript") or "").strip()
+        if not raw_text:
+            raise RuntimeError("模板生成缺少 raw_text")
+
+        template = (node_cfg.get("template") or "").strip()
+        if not template:
+            template = (
+                "# {title}\n\n"
+                "## 原文\n{raw_text}\n\n"
+                "## 结构化整理\n{analysis}\n"
+            )
+        prompt = (node_cfg.get("prompt") or "请将输入原文整理为结构化文档，按模板占位输出。").strip()
+        analysis = self.summarize_with_volcengine(raw_text, prompt)
+        if not analysis:
+            raise RuntimeError("模板生成调用LLM失败")
+
+        title = (node_cfg.get("title") or "文档处理结果").strip()
+        final_markdown = template.replace("{title}", title).replace("{raw_text}", raw_text).replace("{analysis}", analysis)
+        return {
+            "status": "success",
+            "title": title,
+            "final_markdown": final_markdown,
+            "template_used": template,
+            "analysis_preview": analysis[:500],
+        }
+
+    def _tool_node_image_ocr_to_text(self, node_cfg: dict, ctx: dict) -> dict:
+        """
+        OCR图片转文本工具：
+        - 优先 MinerU 图片OCR
+        - 返回统一文本结果
+        """
+        image_path = (node_cfg.get("image_path") or ctx.get("input_file") or "").strip()
+        if not image_path:
+            raise RuntimeError("OCR工具缺少 image_path")
+        if not os.path.exists(image_path):
+            raise RuntimeError(f"OCR工具文件不存在: {image_path}")
+
+        text = ""
+        engine = "unknown"
+        if MINERU_PROCESSOR_AVAILABLE:
+            proc = MinerUProcessor(output_dir=OUTPUT_DIR)
+            result = proc.process_image(image_path, ocr=True)
+            if result and result.success:
+                text = (result.content or result.markdown or "").strip()
+                engine = "mineru_paddleocr"
+        if not text:
+            from PIL import Image
+            import pytesseract
+
+            with Image.open(image_path) as img:
+                text = (pytesseract.image_to_string(img, lang="chi_sim+eng") or "").strip()
+            engine = "pytesseract"
+        if not text:
+            raise RuntimeError("OCR识别失败：未提取到文本")
+
+        rd = dict(ctx.get("result_data") or {})
+        rd["transcript"] = text
+        rd["source_type"] = "image_ocr"
+        rd["source_file"] = image_path
+        return {
+            "status": "success",
+            "engine": engine,
+            "text": text,
+            "text_preview": text[:500],
+            "result_data": rd,
+        }
+
+    def _tool_node_sync_feishu_only(self, node_cfg: dict, ctx: dict) -> dict:
+        md_file = node_cfg.get("md_file") or ctx.get("previous_output", {}).get("md_file")
+        if not md_file:
+            raise RuntimeError("同步飞书缺少 md_file")
+        self._run_feishu_upload_if_enabled(
+            ctx["link"], md_file, ctx.get("user_prompt", ""), ctx.get("feishu_folder_path")
+        )
+        return {"status": "success", "md_file": md_file}
+
+    def _tool_node_agent_process(self, node_cfg: dict, ctx: dict) -> dict:
+        input_source = node_cfg.get("input_source") or "previous_output_json"
+        if input_source == "custom_json":
+            payload = node_cfg.get("custom_input_json") or {}
+        elif input_source == "task_context_json":
+            payload = {"link": ctx.get("link"), "user_prompt": ctx.get("user_prompt"), "result_data": ctx.get("result_data")}
+        else:
+            payload = ctx.get("previous_output") or {}
+        prompt = (node_cfg.get("prompt") or "请对输入内容进行结构化处理并返回 JSON").strip()
+        material = json.dumps(payload, ensure_ascii=False)
+        summary = self.summarize_with_volcengine(material, prompt)
+        if not summary:
+            raise RuntimeError("Agent节点执行失败")
+        return {"status": "success", "agent_output_json": {"text": summary}}
+
     def _show_video_page(self):
-        """显示视频处理页面"""
+        """显示链接文档化页面"""
         if hasattr(self, 'current_page') and self.current_page == "video":
             return
         
@@ -3376,17 +5193,21 @@ class App:
         # 隐藏多模态文档处理页面
         if hasattr(self, 'multimodal_page') and self.multimodal_page:
             self.multimodal_page.pack_forget()
+
+        # 隐藏任务编排页面
+        if hasattr(self, 'orchestration_page') and self.orchestration_page:
+            self.orchestration_page.pack_forget()
+
+        # 隐藏设置页面
+        if hasattr(self, 'settings_page') and self.settings_page:
+            self.settings_page.pack_forget()
         
         # 显示视频处理页面
         if hasattr(self, 'video_page') and self.video_page:
             self.video_page.pack(fill=tk.BOTH, expand=True)
         
         # 更新按钮样式
-        if hasattr(self, 'nav_video_btn') and hasattr(self, 'nav_chat_btn'):
-            self.nav_video_btn.configure(bg=UI_CARD, fg=UI_ACCENT)
-            self.nav_chat_btn.configure(bg=UI_BG, fg=UI_TEXT_MUTED)
-        if hasattr(self, 'nav_multimodal_btn'):
-            self.nav_multimodal_btn.configure(bg=UI_BG, fg=UI_TEXT_MUTED)
+        self._set_nav_active("video")
         
         self.current_page = "video"
         self.root.title(APP_TITLE)
@@ -3403,6 +5224,14 @@ class App:
         # 隐藏多模态文档处理页面
         if hasattr(self, 'multimodal_page') and self.multimodal_page:
             self.multimodal_page.pack_forget()
+
+        # 隐藏任务编排页面
+        if hasattr(self, 'orchestration_page') and self.orchestration_page:
+            self.orchestration_page.pack_forget()
+
+        # 隐藏设置页面
+        if hasattr(self, 'settings_page') and self.settings_page:
+            self.settings_page.pack_forget()
         
         # 创建AI问答页面（如果还没有创建）
         if not hasattr(self, 'chat_page') or self.chat_page is None:
@@ -3421,11 +5250,7 @@ class App:
         self.chat_page.pack(fill=tk.BOTH, expand=True)
         
         # 更新按钮样式
-        if hasattr(self, 'nav_video_btn') and hasattr(self, 'nav_chat_btn'):
-            self.nav_video_btn.configure(bg=UI_BG, fg=UI_TEXT_MUTED)
-            self.nav_chat_btn.configure(bg=UI_CARD, fg=UI_ACCENT)
-        if hasattr(self, 'nav_multimodal_btn'):
-            self.nav_multimodal_btn.configure(bg=UI_BG, fg=UI_TEXT_MUTED)
+        self._set_nav_active("chat")
         
         self.current_page = "chat"
         self.root.title(f"{APP_TITLE} - AI问答")
@@ -3446,6 +5271,14 @@ class App:
         # 隐藏AI问答页面
         if hasattr(self, 'chat_page') and self.chat_page:
             self.chat_page.pack_forget()
+
+        # 隐藏任务编排页面
+        if hasattr(self, 'orchestration_page') and self.orchestration_page:
+            self.orchestration_page.pack_forget()
+
+        # 隐藏设置页面
+        if hasattr(self, 'settings_page') and self.settings_page:
+            self.settings_page.pack_forget()
         
         # 创建多模态文档处理页面（如果还没有创建）
         if not hasattr(self, 'multimodal_page') or self.multimodal_page is None:
@@ -3455,14 +5288,51 @@ class App:
         self.multimodal_page.pack(fill=tk.BOTH, expand=True)
         
         # 更新按钮样式
-        if hasattr(self, 'nav_video_btn') and hasattr(self, 'nav_chat_btn'):
-            self.nav_video_btn.configure(bg=UI_BG, fg=UI_TEXT_MUTED)
-            self.nav_chat_btn.configure(bg=UI_BG, fg=UI_TEXT_MUTED)
-        if hasattr(self, 'nav_multimodal_btn'):
-            self.nav_multimodal_btn.configure(bg=UI_CARD, fg=UI_ACCENT)
+        self._set_nav_active("multimodal")
         
         self.current_page = "multimodal"
         self.root.title(f"{APP_TITLE} - 文档处理")
+
+    def _show_orchestration_page(self):
+        """显示任务编排页面。"""
+        if hasattr(self, "current_page") and self.current_page == "orchestration":
+            return
+
+        if hasattr(self, "video_page") and self.video_page:
+            self.video_page.pack_forget()
+        if hasattr(self, "chat_page") and self.chat_page:
+            self.chat_page.pack_forget()
+        if hasattr(self, "multimodal_page") and self.multimodal_page:
+            self.multimodal_page.pack_forget()
+        if hasattr(self, "settings_page") and self.settings_page:
+            self.settings_page.pack_forget()
+
+        if not hasattr(self, "orchestration_page") or self.orchestration_page is None:
+            self.orchestration_page = tk.Frame(self.content_frame, bg=UI_BG)
+            self._build_orchestration_page(self.orchestration_page)
+
+        self.orchestration_page.pack(fill=tk.BOTH, expand=True)
+        self._set_nav_active("orchestration")
+        self.current_page = "orchestration"
+        self.root.title(f"{APP_TITLE} - 任务编排")
+
+    def _show_settings_page(self):
+        """显示统一设置页面。"""
+        if hasattr(self, "current_page") and self.current_page == "settings":
+            return
+        if hasattr(self, "video_page") and self.video_page:
+            self.video_page.pack_forget()
+        if hasattr(self, "chat_page") and self.chat_page:
+            self.chat_page.pack_forget()
+        if hasattr(self, "multimodal_page") and self.multimodal_page:
+            self.multimodal_page.pack_forget()
+        if hasattr(self, "orchestration_page") and self.orchestration_page:
+            self.orchestration_page.pack_forget()
+        if hasattr(self, "settings_page") and self.settings_page:
+            self.settings_page.pack(fill=tk.BOTH, expand=True)
+        self._set_nav_active("settings")
+        self.current_page = "settings"
+        self.root.title(f"{APP_TITLE} - 设置")
     
     # 打开AI问答窗口
     def open_ai_chat_window(self):
@@ -3474,7 +5344,7 @@ class App:
         try:
             # 创建新窗口
             chat_window = tk.Toplevel(self.root)
-            chat_window.title("🤖 AI技术专家问答系统")
+            chat_window.title("AI问答")
             chat_window.geometry("1200x800")
             chat_window.minsize(1000, 600)
             
@@ -3497,7 +5367,13 @@ class App:
     def _build_chat_page(self, parent):
         """构建AI问答页面 - 使用豆包AI风格界面"""
         # 使用豆包AI风格聊天界面，传入RAG知识库和RAG工具
-        chat_page = DoubaoChatPage(parent, rag_kb=self._rag_kb, rag_tool=self._rag_tool)
+        chat_page = DoubaoChatPage(
+            parent,
+            rag_kb=self._rag_kb,
+            rag_tool=self._rag_tool,
+            workflow_node_tools_provider=self._get_workflow_node_tools,
+            workflow_node_executor=self._execute_workflow_node,
+        )
         chat_page.pack(fill=tk.BOTH, expand=True)
         self.ai_chat_page = chat_page
     
@@ -4359,18 +6235,21 @@ class App:
                 
                 for link in links:
                     # 检查链接是否已经导入
-                    if not self.is_link_already_imported(link):
-                        self.add_task_to_history(
-                            link,
-                            user_prompt,
-                            feishu_folder_path,
-                            feishu_sync_override=batch_feishu_sync_var.get(),
-                        )
-                        self._task_queue_append_unique(link)
-                        new_links_count += 1
-                    else:
+                    already = self.is_link_already_imported(link)
+                    # 无论是否已存在，都更新一次历史记录（尤其是飞书同步开关/路径）
+                    self.add_task_to_history(
+                        link,
+                        user_prompt,
+                        feishu_folder_path,
+                        feishu_sync_override=batch_feishu_sync_var.get(),
+                    )
+                    # 默认行为：已存在的链接也允许重新入队跑一遍（避免“上次关了飞书同步导致这次不上传”）
+                    self._task_queue_append_unique(link)
+                    if already:
                         existing_links_count += 1
-                        self.append_log(f"链接已存在，跳过导入：{link}")
+                        self.append_log(f"链接已存在，已更新配置并重新入队：{link}")
+                    else:
+                        new_links_count += 1
                 
                 self.append_log(f"批量导入完成：新添加 {new_links_count} 个链接，跳过 {existing_links_count} 个已存在的链接")
                 
@@ -4915,7 +6794,7 @@ class App:
         else:
             return "视频"
     
-    def _run_xiaohongshu_analysis(self, link: str, user_prompt: str = "", feishu_folder_path: str = None):
+    def _run_xiaohongshu_analysis(self, link: str, user_prompt: str = "", feishu_folder_path: str = None, analyzed_result: dict = None):
         """运行小红书图文分析流程"""
         try:
             # 导入link_analyzer模块
@@ -4935,7 +6814,8 @@ class App:
             self.update_progress(10, "提取小红书图文内容...")
             self.append_log("开始分析小红书链接...")
             
-            result = analyzer.analyze_link(link)
+            # 若上游已分析过链接（任务编排下载节点），直接复用，避免重复抓取/重复OCR
+            result = analyzed_result if isinstance(analyzed_result, dict) else analyzer.analyze_link(link)
             
             if not result or result.get('error'):
                 error_msg = result.get('error', '未知错误') if result else '分析失败'
@@ -5280,6 +7160,8 @@ class App:
         """处理窗口关闭事件"""
         try:
             self.append_log("正在关闭应用程序...")
+            self._workflow_scheduler_stop_event.set()
+            self._workflow_stop_event.set()
             # 关闭线程池
             self.append_log("正在关闭线程池...")
             self.executor.shutdown(wait=False)  # 不等待所有任务完成
@@ -6424,6 +8306,7 @@ class App:
     # 使用火山引擎 API 进行文本总结（已停用，改用本地处理）
     def summarize_with_volcengine(self, text: str, user_prompt: str = ""):
         try:
+            # 统一从「AI API 配置中心」读取接入点（并叠加运行时 config.json）
             api_key = CONFIG.get("volcengine_api_key", VOLCENGINE_API_KEY)
             
             # 如果API密钥为空，使用本地简单总结
@@ -6463,19 +8346,81 @@ class App:
                     "content": user_prompt
                 })
             
-            # 主接入点 + 备用接入点（均为 Doubao-Seed-2.0-mini）
-            primary = CONFIG.get("ai_chat_model", AI_CHAT_MODEL)
-            backup = CONFIG.get("ai_chat_model_backup", AI_CHAT_MODEL_BACKUP)
-            client = Ark(
-                base_url=AI_CHAT_API_URL,
-                api_key=AI_CHAT_API_KEY,
-                timeout=60.0,
-            )
+            # 【关键】根据文档大小动态设置超时时间
+            text_length = len(text)
+            if text_length < 5000:
+                timeout = 60.0  # 小文档：1 分钟
+                timeout_desc = "1 分钟"
+            elif text_length < 20000:
+                timeout = 120.0  # 中文档：2 分钟
+                timeout_desc = "2 分钟"
+            elif text_length < 50000:
+                timeout = 180.0  # 大文档：3 分钟
+                timeout_desc = "3 分钟"
+            else:
+                timeout = 240.0  # 超大文档：4 分钟
+                timeout_desc = "4 分钟"
+            
+            self.append_log(f"文档大小：{text_length} 字符，设置超时时间：{timeout_desc}", "INFO")
+            
+            try:
+                from ai_api_config_gui import AIAPIConfigManager, _normalize_openai_base_url
+                cm = AIAPIConfigManager(runtime_overlay=CONFIG)
+                cfg = cm.get_config()
+                base_url = _normalize_openai_base_url(cfg.get("base_url") or AI_CHAT_API_URL)
+                api_key = (cfg.get("api_key") or api_key or AI_CHAT_API_KEY).strip()
+                primary = (cfg.get("endpoint_id") or CONFIG.get("ai_chat_model") or AI_CHAT_MODEL).strip()
+                backups = cfg.get("backup_configs") or []
+                backup = (CONFIG.get("ai_chat_model_backup") or AI_CHAT_MODEL_BACKUP).strip()
+                # 优先拿第一个有效备选（若有），否则退回 config.json 的 backup
+                for b in backups:
+                    ep = (b.get("endpoint_id") or "").strip()
+                    if ep and ep != primary:
+                        backup = ep
+                        break
+            except Exception:
+                base_url = AI_CHAT_API_URL
+                api_key = (api_key or AI_CHAT_API_KEY).strip()
+                primary = (CONFIG.get("ai_chat_model", AI_CHAT_MODEL) or "").strip()
+                backup = (CONFIG.get("ai_chat_model_backup", AI_CHAT_MODEL_BACKUP) or "").strip()
+
+            client = Ark(base_url=base_url, api_key=api_key)
+
+            class LLMLimitOutNoBackupError(RuntimeError):
+                pass
+
+            def _classify_error(e: Exception) -> str:
+                et = type(e).__name__
+                msg = str(e)
+                if "Timeout" in et or "timed out" in msg.lower():
+                    return "timeout"
+                if "RateLimit" in et or "429" in msg or "SetLimitExceeded" in msg or "TooManyRequests" in msg:
+                    return "limit_out"
+                return "other"
+
+            def _call_with_deadline(model_id: str, effective_timeout_sec: float):
+                # Ark SDK 的 timeout 可能不生效（你日志里 1 分钟设置却等了 3 分钟）。
+                # 这里用 Future 强制截止，保证超时“真的按预期发生”。
+                import concurrent.futures
+
+                def _do_call():
+                    return client.chat.completions.create(
+                        model=model_id,
+                        messages=messages,
+                        timeout=effective_timeout_sec,
+                    )
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+                    f = ex.submit(_do_call)
+                    return f.result(timeout=effective_timeout_sec + 2.0)
+
             max_retries = 3
             for attempt in range(max_retries):
                 self.append_log(f"调用火山引擎API进行总结... (尝试 {attempt + 1}/{max_retries})", "INFO")
                 last_err = None
                 primary_failed_detail = None
+                # timeout 动态递增：首次按文档大小，后续若 timeout 就加时
+                effective_timeout = timeout * (1.0 + 0.5 * attempt)
                 _tried = set()
                 for mid, label in ((primary, "主"), (backup, "备")):
                     if not mid or mid in _tried:
@@ -6483,11 +8428,7 @@ class App:
                     _tried.add(mid)
                     try:
                         self.append_log(f"  使用{label}接入点: {mid}", "INFO")
-                        response = client.chat.completions.create(
-                            model=mid,
-                            messages=messages,
-                            timeout=60.0,
-                        )
+                        response = _call_with_deadline(mid, effective_timeout)
                         if response.choices and len(response.choices) > 0:
                             summary = response.choices[0].message.content
                             if summary:
@@ -6506,12 +8447,19 @@ class App:
                         self.append_log(f"  [{label}] 接入点失败 [{et}]: {e}", "ERROR")
                         if label == "主":
                             primary_failed_detail = f"{et}: {e}"
+                        # 规则：limit_out/token 不足时，立即切换主备；无需对同一接入点做无意义重试
+                        cat = _classify_error(e)
+                        if cat == "limit_out":
+                            continue
                 if attempt < max_retries - 1:
                     import time
                     w = 2 ** attempt
                     self.append_log(f"主备均失败，{w}秒后重试...", "WARNING")
                     time.sleep(w)
             if last_err:
+                # 若是 limit_out 且没有可切换的备接入点，抛一个“自造错误类型”，便于上层区分
+                if _classify_error(last_err) == "limit_out" and not backup:
+                    raise LLMLimitOutNoBackupError(str(last_err))
                 self.append_log(f"火山引擎总结最终失败: {last_err}", "ERROR")
                 threading.Thread(
                     target=self._ops_dispatch_log_incident,
@@ -6594,9 +8542,11 @@ class App:
             # 获取当前日期（月-日）
             current_date = time.strftime('%m-%d')
             
-            # 从内容中提取标题（使用AI分析结果）
+            # 从内容中提取标题（优先复用上游已提取标题，避免重复日志）
             summary = result_data.get('ai_summary', '')
-            doc_name = self.extract_title_from_summary(summary, link)
+            doc_name = (result_data.get('title') or '').strip()
+            if not doc_name:
+                doc_name = self.extract_title_from_summary(summary, link)
             
             # 计算URL哈希（用于视频信息中显示）
             url_hash = hashlib.md5(link.encode()).hexdigest()[:8]
@@ -7242,6 +9192,65 @@ class App:
                 "AI API配置模块(ai_api_config_gui)未找到，请确保文件存在。\n\n" +
                 "请检查文件: ai_api_config_gui.py"
             )
+
+
+    def open_ocr_api_config_window(self):
+        """打开 OCR API 配置窗口"""
+        try:
+            from ocr_api_config_gui import OcrApiConfigGui
+            ocr_config = CONFIG.get('ocr_config', {})
+            OcrApiConfigGui(self.root, ocr_config)
+        except ImportError:
+            messagebox.showwarning(
+                "模块未加载",
+                "OCR API 配置模块 (ocr_api_config_gui) 未找到，请确保文件存在。"
+            )
+        except Exception as e:
+            messagebox.showerror("错误", f"打开 OCR API 配置失败：{e}")
+
+    def open_task_node_center_window(self):
+        """打开本地任务节点中心（节点文档 + 参数输入页）。"""
+        if not TASK_NODE_CENTER_AVAILABLE:
+            messagebox.showwarning(
+                "模块未加载",
+                "任务节点中心模块(task_runtime.node_center_gui)未找到，请检查文件。",
+            )
+            return
+        open_task_node_center(
+            self.root,
+            config_getter=lambda: CONFIG.copy(),
+            config_saver=self._save_local_workflow_config_runtime,
+            logger=lambda msg: self.append_log(msg, "INFO"),
+        )
+
+    def open_workflow_designer_window(self):
+        """打开本地流程设计器（创建流程、命名、选取节点、配置 Agent 节点）。"""
+        if not WORKFLOW_DESIGNER_AVAILABLE:
+            messagebox.showwarning(
+                "模块未加载",
+                "流程设计器模块(task_runtime.workflow_designer_gui)未找到，请检查文件。",
+            )
+            return
+        open_workflow_designer(
+            self.root,
+            config_getter=lambda: CONFIG.copy(),
+            config_saver=self._save_local_workflow_config_runtime,
+            logger=lambda msg: self.append_log(msg, "INFO"),
+        )
+
+    def _save_local_workflow_config_runtime(self, new_config):
+        """保存本地任务编排配置到 config（并同步 MariaDB）。"""
+        global CONFIG
+        try:
+            CONFIG = dict(new_config)
+            ok = save_config(CONFIG)
+            if ok:
+                self.append_log("本地任务编排配置已保存（config + MariaDB）", "INFO")
+                self.refresh_workflow_selector()
+            return ok
+        except Exception as e:
+            self.append_log(f"保存本地任务编排配置失败：{e}", "ERROR")
+            return False
     
     def open_thread_config_window(self):
         """打开线程配置窗口"""

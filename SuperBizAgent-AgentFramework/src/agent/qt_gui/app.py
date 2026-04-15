@@ -21,7 +21,7 @@ from qt_gui.main_window import MainWindow
 def main():
     """主函数"""
     app = QApplication(sys.argv)
-    app.setApplicationName("SuperBizAgent")
+    app.setApplicationName("多模态文档化助手")
     app.setApplicationVersion("2.0.0")
     
     # 设置全局字体

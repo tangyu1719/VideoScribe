@@ -1,8 +1,8 @@
 @echo off
 chcp 65001 >nul
 echo ========================================
-echo  SuperBizAgent - AI Agent Framework
-echo  标准Agent工程框架版本
+echo  多模态文档化助手 ^(Multimodal Doc Assistant^)
+echo  Standard Agent Framework
 echo ========================================
 echo.
 

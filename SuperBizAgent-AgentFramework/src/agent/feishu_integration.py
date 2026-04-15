@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import tempfile
 import time
 from typing import Any, Dict, List, Optional
@@ -56,6 +57,11 @@ class FeishuKnowledgeBase:
         self.app_secret = app_secret.strip()
         self._tenant_token: Optional[str] = None
         self._tenant_expire: float = 0.0
+        # 最近一次失败原因（供 GUI 展示；避免仅 print 到控制台导致“上传失败但无原因”）
+        self.last_error: Optional[str] = None
+
+    def _set_error(self, msg: str) -> None:
+        self.last_error = msg
 
     def parse_feishu_folder_from_prompt(self, prompt: str) -> Optional[str]:
         """从 User Prompt 中解析「飞书路径：xxx」。"""
@@ -68,6 +74,7 @@ class FeishuKnowledgeBase:
 
     def _tenant_access_token(self) -> Optional[str]:
         if requests is None:
+            self._set_error("未安装 requests，无法调用飞书 OpenAPI。请先安装依赖：pip install requests")
             return None
         now = time.time()
         if self._tenant_token and now < self._tenant_expire - 60:
@@ -81,16 +88,17 @@ class FeishuKnowledgeBase:
             )
             data = r.json()
             if data.get("code") != 0:
-                print(f"[Feishu] 获取 tenant_access_token 失败: {data}")
+                self._set_error(f"获取 tenant_access_token 失败: {data}")
                 return None
             tok = data.get("tenant_access_token")
             if not tok:
+                self._set_error(f"获取 tenant_access_token 失败：响应无 tenant_access_token: {data}")
                 return None
             self._tenant_token = tok
             self._tenant_expire = now + float(data.get("expire", 7200))
             return tok
         except Exception as e:
-            print(f"[Feishu] tenant_access_token 异常: {e}")
+            self._set_error(f"tenant_access_token 异常: {e}")
             return None
 
     @staticmethod
@@ -117,7 +125,7 @@ class FeishuKnowledgeBase:
                         "请打开该知识库在云空间中的对应文件夹，复制 …/drive/folder/fldcn… 链接或 fldcn Token。"
                     )
             except Exception as e:
-                print(f"[Feishu] 解析飞书落点失败: {e}")
+                self._set_error(f"解析飞书落点失败: {e}")
         return None
 
     def _resolve_folder_token(
@@ -155,12 +163,276 @@ class FeishuKnowledgeBase:
 
         p = (feishu_folder_path or "").strip()
         if p:
-            print(
-                "[Feishu] 纯中文路径无法作为 API 落点。请填写云空间文件夹 Token（fldcn…）或完整文件夹 URL"
-                "（…/drive/folder/fldcn…），可在「AI配置」中设置「云空间文件夹 Token」，或环境变量 FEISHU_FOLDER_TOKEN。"
-                f" 当前: {p[:120]}"
+            self._set_error(
+                "飞书落点无效：当前填写的是“路径字符串”，API 只能接收云空间文件夹 Token（fldcn…）或完整文件夹 URL（…/drive/folder/fldcn…）。"
+                "请在「AI配置」里填写“云空间文件夹 Token”，或设置环境变量 FEISHU_FOLDER_TOKEN。"
+                f" 当前输入: {p[:120]}"
             )
         return None
+
+    def _run_lark_cli_json(self, args: List[str]) -> Optional[Dict[str, Any]]:
+        """调用 lark-cli 并尽量解析 JSON 输出。"""
+        try:
+            exe = "lark-cli.cmd" if os.name == "nt" else "lark-cli"
+            p = subprocess.run(
+                [exe] + args,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="ignore",
+                timeout=120,
+            )
+            out = (p.stdout or "").strip()
+            err = (p.stderr or "").strip()
+            if not out and err:
+                out = err
+            if not out:
+                self._set_error(f"lark-cli 无输出: {' '.join(args)}")
+                return None
+            try:
+                return json.loads(out)
+            except Exception:
+                m = re.search(r"\{[\s\S]*\}\s*$", out)
+                if m:
+                    return json.loads(m.group(0))
+                self._set_error(f"lark-cli 输出非 JSON: {out[:300]}")
+                return None
+        except Exception as e:
+            self._set_error(f"调用 lark-cli 失败: {e}")
+            return None
+
+    def _run_lark_cli_api_json(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: Optional[Dict[str, Any]] = None,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        args = ["api", method.upper(), path, "--as", "user"]
+        if params:
+            args.extend(["--params", json.dumps(params, ensure_ascii=False)])
+        if data:
+            args.extend(["--data", json.dumps(data, ensure_ascii=False)])
+        return self._run_lark_cli_json(args)
+
+    @staticmethod
+    def _extract_doc_token_from_url(url: str) -> Optional[str]:
+        if not url:
+            return None
+        m = re.search(r"/docx/([a-zA-Z0-9_-]+)", url)
+        if m:
+            return m.group(1)
+        m = re.search(r"/wiki/([a-zA-Z0-9_-]+)", url)
+        if m:
+            return f"wiki:{m.group(1)}"
+        return None
+
+    @staticmethod
+    def _sanitize_markdown_for_cli(markdown: str) -> str:
+        """清理 CLI 参数中高风险字符，避免子进程调用异常。"""
+        if not markdown:
+            return ""
+        # NUL 会直接破坏命令参数；统一替换为空格。
+        return markdown.replace("\x00", " ")
+
+    @staticmethod
+    def _split_markdown_chunks(markdown: str, chunk_size: int = 1500) -> List[str]:
+        """按段落尽量切分，避免单次 CLI 参数过长。"""
+        text = markdown or ""
+        if len(text) <= chunk_size:
+            return [text] if text else []
+
+        chunks: List[str] = []
+        cursor = 0
+        n = len(text)
+        while cursor < n:
+            end = min(cursor + chunk_size, n)
+            if end < n:
+                # 优先按空行切分，避免破坏 markdown 结构
+                cut = text.rfind("\n\n", cursor, end)
+                if cut != -1 and cut > cursor + 200:
+                    end = cut + 2
+            chunks.append(text[cursor:end])
+            cursor = end
+        return chunks
+
+    def _upload_via_user_cli_fallback(self, title: str, md_content: str, folder_token: str) -> Optional[str]:
+        """
+        当应用态上传被权限拒绝时，降级到用户态 lark-cli：
+        1) 在目标云空间文件夹创建文档；
+        2) 若启用知识库同步，则尽量创建到配置的 wiki 锚点。
+        """
+        create = self._run_lark_cli_json(
+            [
+                "docs", "+create",
+                "--as", "user",
+                "--folder-token", folder_token,
+                "--title", title[:200],
+                "--markdown", "# 文档初始化\n",
+            ]
+        )
+        if not create or not create.get("ok"):
+            self._set_error(f"用户态创建文档失败: {create or self.last_error}")
+            return None
+        data = create.get("data") or {}
+        doc_url = str(data.get("doc_url") or "")
+        doc_id = str(data.get("doc_id") or "")
+        base_ret = doc_id or self._extract_doc_token_from_url(doc_url)
+        if not base_ret:
+            self._set_error(f"用户态创建文档成功但未解析到 token: {create}")
+            return None
+
+        # 再分块写入正文，避免一次性长 markdown 触发 CLI/服务端异常。
+        doc_ref = doc_url or doc_id
+        sanitized_md = self._sanitize_markdown_for_cli(md_content or "")
+        chunks = self._split_markdown_chunks(sanitized_md, chunk_size=1500)
+        for idx, chunk in enumerate(chunks):
+            upd = self._run_lark_cli_json(
+                [
+                    "docs", "+update",
+                    "--as", "user",
+                    "--doc", doc_ref,
+                    "--mode", "append",
+                    "--markdown", chunk,
+                ]
+            )
+            if not upd or not upd.get("ok"):
+                self._set_error(
+                    f"用户态写入文档失败（chunk {idx + 1}/{len(chunks)}）: "
+                    f"{upd or self.last_error}"
+                )
+                return None
+
+        cfg = _load_config_fragment()
+        if not cfg.get("feishu_wiki_sync_enabled"):
+            return str(base_ret)
+
+        anchor = (cfg.get("feishu_wiki_anchor_node_token") or "").strip()
+        if not anchor:
+            self._set_error(
+                "已完成云空间上传，但知识库同步需要 feishu_wiki_anchor_node_token。"
+                "当前未配置锚点，已保留云文档 token。"
+            )
+            return str(base_ret)
+
+        # 用户态：先解析锚点所在空间并按配置路径逐级确保节点存在，再把文档写到最终节点
+        node_res = self._run_lark_cli_api_json(
+            "GET",
+            "/wiki/v2/spaces/get_node",
+            params={"token": anchor},
+        )
+        if not node_res or int(node_res.get("code", -1)) != 0:
+            self._set_error(f"知识库同步失败：无法读取锚点节点信息: {node_res}")
+            return str(base_ret)
+        node = ((node_res.get("data") or {}).get("node") or {})
+        space_id = str(node.get("space_id") or "").strip()
+        if not space_id:
+            self._set_error(f"知识库同步失败：锚点缺少 space_id: {node_res}")
+            return str(base_ret)
+
+        def _list_children(parent_token: Optional[str]) -> List[Dict[str, Any]]:
+            out: List[Dict[str, Any]] = []
+            page_token: Optional[str] = None
+            for _ in range(100):
+                q: Dict[str, Any] = {"page_size": 50}
+                if parent_token:
+                    q["parent_node_token"] = parent_token
+                if page_token:
+                    q["page_token"] = page_token
+                r = self._run_lark_cli_api_json(
+                    "GET",
+                    f"/wiki/v2/spaces/{space_id}/nodes",
+                    params=q,
+                )
+                if not r or int(r.get("code", -1)) != 0:
+                    self._set_error(f"知识库同步失败：列子节点失败: {r}")
+                    return out
+                d = r.get("data") or {}
+                out.extend(d.get("items") or [])
+                if not d.get("has_more"):
+                    break
+                page_token = str(d.get("page_token") or "").strip() or None
+            return out
+
+        def _find_child(parent_token: Optional[str], seg_title: str) -> Optional[str]:
+            for it in _list_children(parent_token):
+                if str(it.get("title") or "").strip() == seg_title:
+                    nt = str(it.get("node_token") or "").strip()
+                    if nt:
+                        return nt
+            return None
+
+        def _create_child(parent_token: Optional[str], seg_title: str) -> Optional[str]:
+            body: Dict[str, Any] = {
+                "obj_type": "docx",
+                "node_type": "origin",
+                "title": seg_title[:500],
+            }
+            if parent_token:
+                body["parent_node_token"] = parent_token
+            r = self._run_lark_cli_api_json(
+                "POST",
+                f"/wiki/v2/spaces/{space_id}/nodes",
+                data=body,
+            )
+            if r and int(r.get("code", -1)) == 0:
+                nd = ((r.get("data") or {}).get("node") or {})
+                nt = str(nd.get("node_token") or "").strip()
+                if nt:
+                    return nt
+
+            # API 创建节点权限不足时，降级为 docs +create 在父节点下创建占位页，再使用新 wiki token 作为下一级父节点
+            placeholder = self._run_lark_cli_json(
+                [
+                    "docs", "+create",
+                    "--as", "user",
+                    "--wiki-node", str(parent_token or anchor),
+                    "--title", seg_title[:200],
+                    "--markdown", f"# {seg_title}\n\n目录占位",
+                ]
+            )
+            if not placeholder or not placeholder.get("ok"):
+                self._set_error(f"知识库同步失败：创建路径节点失败: {r or placeholder}")
+                return None
+            purl = str((placeholder.get("data") or {}).get("doc_url") or "")
+            ptoken = self._extract_doc_token_from_url(purl)
+            if ptoken and ptoken.startswith("wiki:"):
+                return ptoken.split("wiki:", 1)[1]
+            self._set_error(f"知识库同步失败：创建路径占位后未解析到 wiki token: {placeholder}")
+            return None
+
+        cur_parent = anchor
+        path_str = (cfg.get("feishu_wiki_path_ensure") or "").strip()
+        for seg in self._wiki_parse_path_segments(path_str):
+            s = seg.strip()
+            if not s:
+                continue
+            found = _find_child(cur_parent, s)
+            if found:
+                cur_parent = found
+                continue
+            created = _create_child(cur_parent, s)
+            if not created:
+                return str(base_ret)
+            cur_parent = created
+
+        wiki_create = self._run_lark_cli_json(
+            [
+                "docs", "+create",
+                "--as", "user",
+                "--wiki-node", cur_parent,
+                "--title", title[:200],
+                "--markdown", md_content or "",
+            ]
+        )
+        if not wiki_create or not wiki_create.get("ok"):
+            self._set_error(f"知识库同步（用户态）失败: {wiki_create}")
+            return str(base_ret)
+        wurl = str((wiki_create.get("data") or {}).get("doc_url") or "")
+        wtoken = self._extract_doc_token_from_url(wurl)
+        self.last_error = None
+        return str(wtoken or base_ret)
 
     def upload_document(
         self,
@@ -178,11 +450,13 @@ class FeishuKnowledgeBase:
             return "mock_doc_token_ok"
 
         if requests is None:
-            print("[Feishu] 未安装 requests，无法上传")
+            self._set_error("未安装 requests，无法上传到飞书。请先安装依赖：pip install requests")
             return None
 
         ft = self._resolve_folder_token(feishu_folder_path, folder_token)
         if not ft or ft == "mock_folder":
+            if not self.last_error:
+                self._set_error("未能解析到云空间文件夹 token（fldcn…）。")
             return None
 
         token = self._tenant_access_token()
@@ -214,11 +488,25 @@ class FeishuKnowledgeBase:
                     r = requests.post(upload_url, headers=headers, files=files, timeout=120)
                 up = r.json()
                 if up.get("code") != 0:
-                    print(f"[Feishu] upload_all 失败: {up}")
-                    return None
+                    code = int(up.get("code", -1))
+                    if code == 1061004:
+                        self._set_error(
+                            "upload_all 权限被拒绝（1061004 forbidden）。"
+                            "通常是飞书应用对目标云空间文件夹无权限，或 folder token 不是当前应用可访问目录。"
+                            f"当前 parent_node={ft}。请在飞书开放平台检查应用 Drive 权限与可见范围，"
+                            "并确认填写的是可访问的云空间文件夹 token/URL。"
+                        )
+                        # 权限被拒绝时，自动尝试用户态 CLI 上传兜底（成功则直接返回 token）
+                        fallback_token = self._upload_via_user_cli_fallback(title, md_content, ft)
+                        if fallback_token:
+                            self.last_error = None
+                            return fallback_token
+                    else:
+                        self._set_error(f"upload_all 失败: {up}")
+                    raise RuntimeError(self.last_error)
                 file_token = (up.get("data") or {}).get("file_token")
                 if not file_token:
-                    print(f"[Feishu] upload_all 无 file_token: {up}")
+                    self._set_error(f"upload_all 无 file_token: {up}")
                     return None
 
             imp_url = f"{OPEN_API}/drive/v1/import_tasks"
@@ -237,15 +525,15 @@ class FeishuKnowledgeBase:
             )
             im = r2.json()
             if im.get("code") != 0:
-                print(f"[Feishu] import_tasks 失败: {im}")
-                return None
+                self._set_error(f"import_tasks 失败: {im}")
+                raise RuntimeError(self.last_error)
             ticket = (im.get("data") or {}).get("ticket")
             if not ticket:
-                print(f"[Feishu] import_tasks 无 ticket: {im}")
-                return None
+                self._set_error(f"import_tasks 无 ticket: {im}")
+                raise RuntimeError(self.last_error)
 
-            # 轮询导入结果
-            for _ in range(60):
+            # 轮询导入结果（大型文档导入耗时可超过 60 秒）
+            for _ in range(180):
                 time.sleep(1.0)
                 gr = requests.get(
                     f"{OPEN_API}/drive/v1/import_tasks/{ticket}",
@@ -254,13 +542,15 @@ class FeishuKnowledgeBase:
                 )
                 gj = gr.json()
                 if gj.get("code") != 0:
-                    print(f"[Feishu] 查询 import 失败: {gj}")
-                    return None
+                    self._set_error(f"查询 import 失败: {gj}")
+                    raise RuntimeError(self.last_error)
                 data = gj.get("data") or {}
+                result = data.get("result") or {}
                 job_status = data.get("job_status")
+                if job_status is None:
+                    job_status = result.get("job_status")
                 # 0 成功 见飞书文档
                 if job_status == 0:
-                    result = data.get("result") or {}
                     doc_token = result.get("token") or result.get("doc_token")
                     if not doc_token:
                         return file_token
@@ -270,16 +560,16 @@ class FeishuKnowledgeBase:
                         wiki_nt = self._sync_docx_to_wiki_if_configured(token, doc_token)
                         if wiki_nt:
                             return f"wiki:{wiki_nt}"
-                        print("[Feishu] 知识库迁入未完成，仍保留云文档 obj_token")
+                        self._set_error("知识库迁入未完成，仍保留云文档 token")
                     return doc_token
                 if job_status in (3, 4):
-                    print(f"[Feishu] 导入任务失败 job_status={job_status} data={data}")
-                    return None
-            print("[Feishu] 导入任务超时")
-            return None
+                    self._set_error(f"导入任务失败 job_status={job_status} data={data}")
+                    raise RuntimeError(self.last_error)
+            self._set_error("导入任务超时（180 秒轮询仍未完成）")
+            raise RuntimeError(self.last_error)
         except Exception as e:
-            print(f"[Feishu] upload_document 异常: {e}")
-            return None
+            self._set_error(f"upload_document 异常: {e}")
+            raise RuntimeError(self.last_error) from e
 
     # ---------- 知识库：解析空间、补全路径、迁入文档 ----------
 
@@ -335,6 +625,13 @@ class FeishuKnowledgeBase:
             if not data.get("has_more"):
                 break
             page_token = data.get("page_token")
+        if not all_items:
+            self._set_error(
+                "知识库同步失败：当前应用未枚举到任何知识空间。请检查应用权限（wiki 相关 scope）和可见范围；"
+                "或直接在配置里填写 feishu_wiki_space_id / feishu_wiki_anchor_node_token 以跳过空间枚举。"
+            )
+            print("[Feishu] wiki spaces 返回为空，建议配置 space_id 或 anchor_node_token")
+            return None
         for it in all_items:
             nm = (it.get("name") or "").strip()
             if nm == name_key:
@@ -343,6 +640,10 @@ class FeishuKnowledgeBase:
             nm = (it.get("name") or "").strip()
             if name_key in nm:
                 return (it.get("space_id") or "").strip() or None
+        self._set_error(
+            f"知识库同步失败：未匹配到知识空间名称（含「{name_key}」）。"
+            "请核对 feishu_wiki_space_name，或直接填写 feishu_wiki_space_id / feishu_wiki_anchor_node_token。"
+        )
         print(f"[Feishu] 未匹配到知识空间名称（含「{name_key}」），请核对 feishu_wiki_space_name 或填写 feishu_wiki_space_id")
         return None
 
@@ -507,6 +808,7 @@ class FeishuKnowledgeBase:
         )
         j = r.json()
         if j.get("code") != 0:
+            self._set_error(f"wiki move_docs_to_wiki 失败: {j}")
             print(f"[Feishu] wiki move_docs_to_wiki 失败: {j}")
             return None
         data = j.get("data") or {}
@@ -545,6 +847,10 @@ class FeishuKnowledgeBase:
             space_id = self._wiki_resolve_space_id(access_token, cfg)
 
         if not space_id:
+            self._set_error(
+                "知识库同步失败：无法解析 space_id。请配置 feishu_wiki_space_id，"
+                "或配置 feishu_wiki_anchor_node_token 作为迁入锚点。"
+            )
             print("[Feishu] 知识库同步：无法解析 space_id，请配置 feishu_wiki_space_name / feishu_wiki_space_id 或 feishu_wiki_anchor_node_token")
             return None
 
@@ -555,6 +861,10 @@ class FeishuKnowledgeBase:
         elif not anchor and segments:
             parent_wiki = self._wiki_ensure_path(access_token, space_id, None, segments)
         else:
+            self._set_error(
+                "知识库同步失败：缺少路径锚点。请配置 feishu_wiki_path_ensure（如 就业技术文档集/AI相关）"
+                "或 feishu_wiki_anchor_node_token。"
+            )
             print("[Feishu] 知识库同步：请在 feishu_wiki_path_ensure 填写路径（如 就业技术文档集/AI相关），或填写 feishu_wiki_anchor_node_token")
             return None
 

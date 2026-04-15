@@ -7,6 +7,7 @@ from tkinter import ttk, messagebox
 import json
 import uuid
 from datetime import datetime
+import re
 
 # 导入数据库模块
 try:
@@ -44,7 +45,7 @@ class AIAPIConfigManager:
                     'id': row['id'],
                     'name': row['name'],
                     'api_key': row['api_key'] or '',
-                    'base_url': row['base_url'] or 'https://ark.cn-beijing.volces.com/api/v3',
+                    'base_url': _normalize_openai_base_url(row['base_url'] or 'https://ark.cn-beijing.volces.com/api/v3'),
                     'model': row['model'] or 'Doubao-Seed-2.0-mini',
                     'endpoint_id': row['endpoint_id'] or 'ep-20260411182220-jv5qt',
                     'request_format': row['request_format'] or 'openai',
@@ -65,12 +66,15 @@ class AIAPIConfigManager:
         r = self.runtime_overlay
         if not r:
             return
+        # 运行时接入点状态（用于前端过滤不展示过期/暂停）
+        if isinstance(r.get("ai_chat_model_status"), dict):
+            self.config["endpoint_status"] = dict(r["ai_chat_model_status"])
         if r.get("volcengine_api_key"):
             self.config["api_key"] = r["volcengine_api_key"]
         if r.get("ai_chat_model"):
             self.config["endpoint_id"] = r["ai_chat_model"]
         if r.get("volcengine_base_url"):
-            self.config["base_url"] = r["volcengine_base_url"]
+            self.config["base_url"] = _normalize_openai_base_url(r["volcengine_base_url"])
         if r.get("ai_chat_model_display_name"):
             self.config["model"] = r["ai_chat_model_display_name"]
         backups = self.config.get("backup_configs") or []
@@ -94,19 +98,38 @@ class AIAPIConfigManager:
             'name': '火山引擎',
             'api_key': '',
             'base_url': 'https://ark.cn-beijing.volces.com/api/v3',
-            'model': 'Doubao-Seed-2.0-mini',
-            'endpoint_id': 'ep-20260411182220-jv5qt',
+            'model': 'Doubao-Seed-2.0-pro',
+            'endpoint_id': 'ep-20260413220538-pbfqw',
             'request_format': 'openai',
             'enabled': True,
-            'backup_configs': []
+            'backup_configs': [
+                {
+                    'id': str(uuid.uuid4()),
+                    'name': 'GLM-4.7',
+                    'api_key': '',
+                    'base_url': 'https://ark.cn-beijing.volces.com/api/v3',
+                    'model': 'GLM-4.7',
+                    'endpoint_id': 'ep-20260413220727-84n92',
+                    'created_at': datetime.now().isoformat()
+                },
+                {
+                    'id': str(uuid.uuid4()),
+                    'name': 'Doubao-Seed-2.0-pro',
+                    'api_key': '',
+                    'base_url': 'https://ark.cn-beijing.volces.com/api/v3',
+                    'model': 'Doubao-Seed-2.0-pro',
+                    'endpoint_id': 'ep-20260413220538-pbfqw',
+                    'created_at': datetime.now().isoformat()
+                }
+            ]
         }
-    
+
     def _save_to_db(self):
         """保存配置到数据库"""
         if not DB_AVAILABLE:
             print("[AI API Config] 数据库不可用，无法保存")
             return False
-        
+
         try:
             sql = """
                 INSERT INTO llm_configs (id, name, api_key, base_url, model, endpoint_id, request_format, enabled, backup_configs, updated_at)
@@ -117,10 +140,10 @@ class AIAPIConfigManager:
             now = datetime.now().isoformat()
             backup_json = json.dumps(self.config.get('backup_configs', []), ensure_ascii=False)
             params = (
-                self.config['id'], self.config['name'], self.config['api_key'], 
+                self.config['id'], self.config['name'], self.config['api_key'],
                 self.config['base_url'], self.config['model'], self.config['endpoint_id'],
                 self.config['request_format'], self.config['enabled'], backup_json, now,
-                self.config['name'], self.config['api_key'], self.config['base_url'], 
+                self.config['name'], self.config['api_key'], self.config['base_url'],
                 self.config['model'], self.config['endpoint_id'], self.config['request_format'],
                 self.config['enabled'], backup_json, now
             )
@@ -130,16 +153,16 @@ class AIAPIConfigManager:
         except Exception as e:
             print(f"[AI API Config] 保存到数据库失败: {e}")
             return False
-    
+
     def get_config(self):
         """获取当前配置"""
         return self.config.copy()
-    
+
     def update_config(self, **kwargs):
         """更新配置"""
         self.config.update(kwargs)
         return self._save_to_db()
-    
+
     def add_backup_config(self, name, api_key, base_url, model, endpoint_id):
         """添加备选配置"""
         backup = {
@@ -155,7 +178,7 @@ class AIAPIConfigManager:
             self.config['backup_configs'] = []
         self.config['backup_configs'].append(backup)
         return self._save_to_db()
-    
+
     def remove_backup_config(self, backup_id):
         """删除备选配置"""
         if 'backup_configs' in self.config:
@@ -164,10 +187,21 @@ class AIAPIConfigManager:
             ]
             return self._save_to_db()
         return False
-    
+
     def get_backup_count(self):
         """获取备选配置数量"""
         return len(self.config.get('backup_configs', []))
+
+
+def _normalize_openai_base_url(url: str) -> str:
+    """避免把 /responses 或 /chat/completions 写进 base_url。"""
+    u = (url or "").strip().rstrip("/")
+    if not u:
+        return u
+    for suffix in ("/responses", "/chat/completions", "/responses/chat/completions"):
+        if u.endswith(suffix):
+            u = u[: -len(suffix)].rstrip("/")
+    return u
 
 
 class AIAPIConfigWindow:
@@ -185,77 +219,52 @@ class AIAPIConfigWindow:
     def _create_window(self):
         """创建配置窗口"""
         self.window = tk.Toplevel(self.parent)
-        self.window.title("AI API配置")
-        self.window.geometry("800x700")
+        self.window.title("AI API 配置")
+        self.window.geometry("900x700")
         self.window.resizable(True, True)
         self.window.configure(bg="#f0f4f8")
         
-        # 主容器
-        main_frame = tk.Frame(self.window, bg="#f0f4f8")
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        # 标题区域（页头）
+        title_frame = tk.Frame(self.window, bg="#f0f4f8")
+        title_frame.pack(fill=tk.X, padx=20, pady=15)
         
-        # 标题
-        title_label = tk.Label(
-            main_frame,
-            text="AI API配置中心",
-            font=("微软雅黑", 16, "bold"),
+        tk.Label(
+            title_frame,
+            text="AI API 配置中心",
+            font=("PingFang SC, Microsoft YaHei, sans-serif", 18, "bold"),
             fg="#0066cc",
             bg="#f0f4f8"
-        )
-        title_label.pack(anchor=tk.W, pady=(0, 10))
-
-        hint = tk.Label(
-            main_frame,
-            text="说明：数据库 llm_configs 与程序实际使用的 config.json 可能不一致；"
-            "打开本窗口时已用当前运行中的接入点覆盖展示。保存时将同时尝试写数据库并同步 config.json。",
-            font=("微软雅黑", 9),
+        ).pack(side=tk.LEFT)
+        
+        # 说明文字
+        desc_frame = tk.Frame(self.window, bg="#f0f4f8")
+        desc_frame.pack(fill=tk.X, padx=20, pady=(0, 10))
+        tk.Label(
+            desc_frame,
+            text="说明：数据库 llm_configs 与程序实际使用的 config.json 可能不一致。打开本窗口时已用当前运行中的接入点覆盖展示。保存时将同时尝试写数据库并同步 config.json。",
+            font=("PingFang SC, Microsoft YaHei, sans-serif", 9),
             fg="#666666",
             bg="#f0f4f8",
-            wraplength=720,
-            justify=tk.LEFT,
-        )
-        hint.pack(anchor=tk.W, pady=(0, 12))
-
-        # 创建画布和滚动条
-        canvas = tk.Canvas(main_frame, bg="#f0f4f8", highlightthickness=0)
-        scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
-        canvas.configure(yscrollcommand=scrollbar.set)
+            wraplength=800,
+            justify=tk.LEFT
+        ).pack(anchor=tk.W)
         
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
-        # 内容容器
-        self.content_frame = tk.Frame(canvas, bg="#f0f4f8")
-        canvas.create_window((0, 0), window=self.content_frame, anchor=tk.NW, width=740)
-        
-        # 绑定滚动
-        self.content_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.bind("<MouseWheel>", lambda e: canvas.yview_scroll(-1 * (e.delta // 120), "units"))
-        
-        # 主配置区域
-        self._create_main_config_section()
-        
-        # 分隔线
-        separator = tk.Frame(self.content_frame, bg="#cccccc", height=1)
-        separator.pack(fill=tk.X, pady=20)
-        
-        # 备选配置区域
-        self._create_backup_config_section()
-        
-        # 按钮区域
+        # 按钮区域（统一放在页头）
         button_frame = tk.Frame(self.window, bg="#f0f4f8")
-        button_frame.pack(fill=tk.X, padx=20, pady=15)
+        button_frame.pack(fill=tk.X, padx=20, pady=10)
         
         save_btn = tk.Button(
             button_frame,
-            text="💾 保存配置",
+            text="保存配置",
             command=self._save_config,
             bg="#0066cc",
             fg="white",
-            font=("微软雅黑", 11, "bold"),
+            font=("PingFang SC, Microsoft YaHei, sans-serif", 11, "bold"),
             padx=20,
             pady=8,
-            cursor="hand2"
+            cursor="hand2",
+            relief=tk.FLAT,
+            overrelief=tk.RAISED
         )
         save_btn.pack(side=tk.LEFT, padx=5)
         
@@ -264,13 +273,29 @@ class AIAPIConfigWindow:
             text="取消",
             command=self.window.destroy,
             bg="#e0e0e0",
-            fg="#333",
-            font=("微软雅黑", 11),
+            fg="#333333",
+            font=("PingFang SC, Microsoft YaHei, sans-serif", 11),
             padx=20,
             pady=8,
-            cursor="hand2"
+            cursor="hand2",
+            relief=tk.FLAT,
+            overrelief=tk.RAISED
         )
         cancel_btn.pack(side=tk.LEFT, padx=5)
+        
+        # 内容区域
+        self.content_frame = tk.Frame(self.window, bg="#f0f4f8")
+        self.content_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        
+        # 创建界面组件
+        self._create_main_config_section()
+        
+        # 分隔线
+        separator = tk.Frame(self.content_frame, bg="#cccccc", height=1)
+        separator.pack(fill=tk.X, pady=15)
+        
+        # 备选配置区域
+        self._create_backup_config_section()
         
         # 模态窗口
         self.window.transient(self.parent)
@@ -372,7 +397,18 @@ class AIAPIConfigWindow:
     def _load_backup_configs(self):
         """加载备选配置到界面"""
         backups = self.config.get('backup_configs', [])
+        status_map = self.config.get("endpoint_status") or {}
+
+        def is_visible(endpoint_id: str) -> bool:
+            if not endpoint_id:
+                return True
+            st = (status_map.get(endpoint_id) or "active").strip().lower()
+            return st == "active"
+
         for backup in backups:
+            # 过期/暂停的接入点不在前端展示
+            if not is_visible(backup.get("endpoint_id", "")):
+                continue
             self._create_backup_frame(backup)
     
     def _create_backup_frame(self, backup=None):
@@ -440,9 +476,17 @@ class AIAPIConfigWindow:
         self._create_backup_frame()
     
     def _delete_backup_frame(self, frame):
-        """删除备选配置框架"""
+        """删除备选配置框架（同时从数据中删除）"""
+        # 从数据列表中删除
+        backup_id = getattr(frame, 'backup_id', None)
+        if backup_id and hasattr(self, 'backup_configs'):
+            self.backup_configs = [b for b in self.backup_configs if b.get('id') != backup_id]
+        
+        # 从界面中删除
         frame.destroy()
-        self.backup_frames.remove(frame)
+        if frame in self.backup_frames:
+            self.backup_frames.remove(frame)
+        
         self._update_count_label()
     
     def _update_count_label(self):
@@ -456,7 +500,7 @@ class AIAPIConfigWindow:
             'id': self.config.get('id', 'default'),
             'name': self.name_entry.get().strip(),
             'api_key': self.api_key_entry.get().strip(),
-            'base_url': self.base_url_entry.get().strip(),
+            'base_url': _normalize_openai_base_url(self.base_url_entry.get().strip()),
             'model': self.model_entry.get().strip(),
             'endpoint_id': self.endpoint_entry.get().strip(),
             'request_format': self.format_var.get(),
@@ -478,6 +522,34 @@ class AIAPIConfigWindow:
             }
             if backup['name'] and backup['api_key']:  # 只保存有效的配置
                 backup_configs.append(backup)
+
+        # 强约束：确保你要求的两个接入点存在且字段规范（url/api_key 与主一致）
+        must = [
+            ("GLM-4.7", "GLM-4.7", "ep-20260413220727-84n92"),
+            ("Doubao-Seed-2.0-pro", "Doubao-Seed-2.0-pro", "ep-20260413220538-pbfqw"),
+        ]
+        exist = {b.get("endpoint_id") for b in backup_configs}
+        for name, model, ep in must:
+            if ep not in exist:
+                backup_configs.append(
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": name,
+                        "api_key": main_config["api_key"],
+                        "base_url": main_config["base_url"],
+                        "model": model,
+                        "endpoint_id": ep,
+                        "created_at": datetime.now().isoformat(),
+                    }
+                )
+            else:
+                for b in backup_configs:
+                    if b.get("endpoint_id") == ep:
+                        b["name"] = name
+                        b["model"] = model
+                        b["api_key"] = main_config["api_key"]
+                        b["base_url"] = main_config["base_url"]
+                        break
         
         main_config['backup_configs'] = backup_configs
         

@@ -301,6 +301,21 @@ class ReActThoughtChain:
         for widget in self.steps:
             widget.frame.destroy()
         self.steps.clear()
+
+    def collapse_all(self):
+        """收起全部步骤内容"""
+        for step in self.steps:
+            if step.is_expanded:
+                step._toggle()
+        self.toggle_all_btn.config(text="[展开全部]")
+
+    def expand_last(self):
+        """展开最后一个步骤，便于查看最新进展"""
+        if not self.steps:
+            return
+        last = self.steps[-1]
+        if not last.is_expanded:
+            last._toggle()
     
     def _toggle_all(self, event=None):
         """展开/收起全部"""

@@ -24,7 +24,7 @@ def main():
     app = QApplication(sys.argv)
     
     # 设置应用属性
-    app.setApplicationName("视频转文字处理工具")
+    app.setApplicationName("多模态文档化助手")
     app.setApplicationVersion("2.0.0")
     
     # 设置全局字体

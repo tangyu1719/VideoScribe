@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-SuperBizAgent - AI Agent Framework
+多模态文档化助手（Multimodal Doc Assistant）
 基于标准Agent工程框架的项目入口
 
 功能：视频下载、语音转文字、AI分析、知识库问答
@@ -29,7 +29,7 @@ def main():
     from agent.video_gui import App
     
     print("=" * 60)
-    print("SuperBizAgent - AI Agent Framework")
+    print("多模态文档化助手（Multimodal Doc Assistant）")
     print("=" * 60)
     
     # 创建主窗口
@@ -38,7 +38,7 @@ def main():
     # 初始化应用
     app = App(root)
     
-    print("✅ Agent应用已启动")
+    print("[OK] Agent应用已启动")
     print("=" * 60)
     
     # 运行主循环

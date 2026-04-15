@@ -115,7 +115,7 @@ class LinkAnalyzer:
         try:
             print(f"检测抖音链接类型：{url}")
             
-            # 访问链接获取HTML内容
+            # 访问链接获取 HTML 内容
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36',
                 'Referer': 'https://www.douyin.com/',
@@ -129,7 +129,7 @@ class LinkAnalyzer:
             
             html_content = response.text
             
-            # 方法1：从JSON数据中提取类型信息
+            # 方法 1：从 JSON 数据中提取类型信息
             match = re.search(r'<script[^>]*>window\._SSR_HYDRATED_DATA\s*=\s*({.*?})</script>', html_content, re.DOTALL)
             if not match:
                 match = re.search(r'window\._SSR_HYDRATED_DATA\s*=\s*({.*?});', html_content, re.DOTALL)
@@ -142,10 +142,10 @@ class LinkAnalyzer:
                     if 'app' in json_data and 'videoInfo' in json_data['app']:
                         video_info = json_data['app']['videoInfo']
                         
-                        # 检查awemeType字段：2表示图文，0或4表示视频
+                        # 检查 awemeType 字段：2 表示图文，0 或 4 表示视频
                         if 'awemeType' in video_info:
                             aweme_type = video_info['awemeType']
-                            print(f"  检测到awemeType: {aweme_type}")
+                            print(f"  检测到 awemeType: {aweme_type}")
                             if aweme_type == 2:
                                 print("  ✓ 检测到抖音图文")
                                 return 'douyin_image'
@@ -164,9 +164,9 @@ class LinkAnalyzer:
                             return 'video'
                 
                 except json.JSONDecodeError as e:
-                    print(f"  JSON解析失败: {e}")
+                    print(f"  JSON 解析失败：{e}")
             
-            # 方法2：检查HTML中的特征
+            # 方法 2：检查 HTML 中的特征
             # 检查是否有图片画廊的特征
             if 'image-gallery' in html_content or 'imageList' in html_content:
                 print("  ✓ 检测到图片画廊特征")
@@ -176,15 +176,15 @@ class LinkAnalyzer:
             video_indicators = ['video-player', 'player-container', 'xigua-video', 'videoDuration']
             for indicator in video_indicators:
                 if indicator in html_content:
-                    print(f"  ✓ 检测到视频特征: {indicator}")
+                    print(f"  ✓ 检测到视频特征：{indicator}")
                     return 'video'
             
-            # 方法3：检查URL特征
+            # 方法 3：检查 URL 特征
             # 某些图文链接有特定特征
             if '/note/' in url or 'modal_id=' in url:
                 # 进一步检查内容
                 if 'slide' in html_content.lower() or 'gallery' in html_content.lower():
-                    print("  ✓ URL和内容特征表明是图文")
+                    print("  ✓ URL 和内容特征表明是图文")
                     return 'douyin_image'
             
             # 默认返回视频类型（保守策略）
@@ -232,7 +232,7 @@ class LinkAnalyzer:
     
     def _detect_xiaohongshu_type(self, html_content):
         """检测小红书链接是视频还是图文"""
-        # 方法1：检查是否有视频相关的meta标签
+        # 方法 1：检查是否有视频相关的 meta 标签
         video_patterns = [
             r'<meta[^>]*property="og:video"[^>]*>',
             r'<meta[^>]*name="og:video"[^>]*>',
@@ -248,10 +248,10 @@ class LinkAnalyzer:
         ]
         for pattern in video_patterns:
             if re.search(pattern, html_content, re.IGNORECASE):
-                print(f"  检测到视频特征: {pattern[:50]}...")
+                print(f"  检测到视频特征：{pattern[:50]}...")
                 return 'video'
         
-        # 方法2：从JSON数据中提取类型信息
+        # 方法 2：从 JSON 数据中提取类型信息
         match = re.search(r'window\.__INITIAL_STATE__\s*=\s*({.*?});', html_content, re.DOTALL)
         if match:
             try:
@@ -263,14 +263,14 @@ class LinkAnalyzer:
                             # 检查类型字段
                             if 'type' in note:
                                 note_type = note['type']
-                                print(f"  检测到笔记类型: {note_type}")
+                                print(f"  检测到笔记类型：{note_type}")
                                 if note_type == 'video':
                                     return 'video'
                                 elif note_type == 'normal':
                                     return 'xiaohongshu'  # 图文
                             # 检查是否有视频链接
                             if 'video' in note or 'videoUrl' in note or 'video_url' in note:
-                                print(f"  检测到视频URL字段")
+                                print(f"  检测到视频 URL 字段")
                                 return 'video'
                             # 检查是否有视频时长
                             if 'videoDuration' in note or 'video_duration' in note:
@@ -281,9 +281,9 @@ class LinkAnalyzer:
                                 print(f"  检测到图片列表，共 {len(note['imageList'])} 张")
                                 return 'xiaohongshu'  # 有图片，认为是图文
             except Exception as e:
-                print(f"  JSON解析失败: {e}")
+                print(f"  JSON 解析失败：{e}")
         
-        # 方法3：检查URL特征（某些视频链接有特定特征）
+        # 方法 3：检查 URL 特征（某些视频链接有特定特征）
         if 'video' in html_content[:5000].lower():
             # 检查是否包含视频播放器的特征
             player_patterns = [
@@ -294,7 +294,7 @@ class LinkAnalyzer:
             ]
             for pattern in player_patterns:
                 if re.search(pattern, html_content, re.IGNORECASE):
-                    print(f"  检测到视频播放器特征: {pattern}")
+                    print(f"  检测到视频播放器特征：{pattern}")
                     return 'video'
         
         # 默认返回图文类型（保守策略）
@@ -327,13 +327,13 @@ class LinkAnalyzer:
                     'message': '小红书视频，需要使用视频分析逻辑'
                 }
             
-            # 备用检测：如果HTML内容很少或包含特定视频标记，可能是视频
+            # 备用检测：如果 HTML 内容很少或包含特定视频标记，可能是视频
             if len(html_content) < 5000 or 'video' in html_content[:3000].lower():
                 # 检查是否有视频相关的关键特征
                 video_indicators = ['video-player', 'player-container', 'xigua-video', 'videoDuration']
                 for indicator in video_indicators:
                     if indicator in html_content:
-                        print(f"✓ 备用检测发现视频特征: {indicator}")
+                        print(f"✓ 备用检测发现视频特征：{indicator}")
                         return {
                             'type': 'video',
                             'url': url,
@@ -521,7 +521,7 @@ class LinkAnalyzer:
             # 提取图片链接
             image_links = []
             
-            # 方法1：从JSON数据中提取（抖音图文的主要方式）
+            # 方法 1：从 JSON 数据中提取（抖音图文的主要方式）
             match = re.search(r'<script[^>]*>window\._SSR_HYDRATED_DATA\s*=\s*({.*?})</script>', html_content, re.DOTALL)
             if not match:
                 match = re.search(r'window\._SSR_HYDRATED_DATA\s*=\s*({.*?});', html_content, re.DOTALL)
@@ -536,7 +536,7 @@ class LinkAnalyzer:
                         # 提取图片列表
                         if 'images' in video_info and video_info['images']:
                             for img in video_info['images']:
-                                # 抖音图片可能有多个URL，优先使用高清晰度的
+                                # 抖音图片可能有多个 URL，优先使用高清晰度的
                                 if 'urlList' in img and img['urlList']:
                                     # 使用第一张（通常是最高清的）
                                     image_links.append(img['urlList'][0])
@@ -555,12 +555,12 @@ class LinkAnalyzer:
                         if 'authorInfo' in video_info and 'nickname' in video_info['authorInfo']:
                             author_name = video_info['authorInfo']['nickname']
                         
-                        print(f"从JSON提取到 {len(image_links)} 张图片")
+                        print(f"从 JSON 提取到 {len(image_links)} 张图片")
                 
                 except json.JSONDecodeError as e:
-                    print(f"JSON解析失败: {e}")
+                    print(f"JSON 解析失败：{e}")
             
-            # 方法2：从meta标签提取（备用）
+            # 方法 2：从 meta 标签提取（备用）
             if not image_links:
                 meta_tags = soup.find_all('meta', property='og:image')
                 for meta in meta_tags:
@@ -568,9 +568,9 @@ class LinkAnalyzer:
                     if content:
                         image_links.append(content)
             
-            # 方法3：从HTML中查找所有图片链接（备用）
+            # 方法 3：从 HTML 中查找所有图片链接（备用）
             if not image_links:
-                # 查找所有包含douyincdn.com或p3-pc-sign.douyinpic.com的图片链接
+                # 查找所有包含 douyincdn.com 或 p3-pc-sign.douyinpic.com 的图片链接
                 all_links = re.findall(r'https?://[^\s"\'<>]+(?:douyincdn\.com|douyinpic\.com)[^\s"\'<>]*', html_content)
                 for link in all_links:
                     if link not in image_links:
@@ -584,12 +584,12 @@ class LinkAnalyzer:
             if 'text_content' not in locals():
                 text_content = []
                 
-                # 从meta标签提取描述
+                # 从 meta 标签提取描述
                 desc_meta = soup.find('meta', attrs={'name': 'description'})
                 if desc_meta:
                     text_content.append(desc_meta.get('content', ''))
                 
-                # 从HTML中提取文本
+                # 从 HTML 中提取文本
                 if not text_content:
                     divs = soup.find_all('div')
                     for div in divs:
@@ -597,7 +597,7 @@ class LinkAnalyzer:
                         if text and len(text) > 20:
                             text_content.append(text)
             
-            # 分析图片内容（使用OCR）
+            # 分析图片内容（使用 OCR）
             import time
             image_analysis = []
             for i, img_url in enumerate(image_links):
@@ -687,7 +687,7 @@ class LinkAnalyzer:
         """清理文本，删除版权信息等无关内容"""
         # 删除版权信息和无关内容
         copyright_patterns = [
-            r'登录我沪ICP 备.*?号',
+            r'登录我沪 ICP 备.*?号',
             r'营业执照.*?号',
             r'沪公网安备.*?号',
             r'增值电信业务经营许可证.*?号',
@@ -703,12 +703,12 @@ class LinkAnalyzer:
             r'地址：上海市黄浦区马当路 388 号 C 座',
             r'电话：9501-3888',
             r'创作中心业务合作发现发布通知.*?',
-            r'更多沪ICP 备.*?号',
+            r'更多沪 ICP 备.*?号',
             r'Y\.g\.关注.*?加载中',
             r'#面试手撕#算法岗手撕#大模型算法 2025-10-28',
             r'#面试手撕#算法岗手撕#大模型算法',
             r'\[doge\]',
-            r'沪ICP 备 13030189 号',
+            r'沪 ICP 备 13030189 号',
             r'\|\|\|\|\|\|\|\|',
             r'加载中'
         ]

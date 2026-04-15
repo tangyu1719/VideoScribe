@@ -39,6 +39,9 @@ class IntentResult:
     needs_rag: bool               # 是否需要RAG
     reason: str                   # 识别原因
     suggested_tags: Optional[Dict[str, str]] = None  # 建议的元数据标签
+    # 任务/问题提取：用于 Query 改写与后续推理（无论 needs_rag 与否都应产出）
+    task: str = ""
+    extracted_query: str = ""
 
 
 @dataclass
@@ -320,7 +323,11 @@ class IntentRecognizer:
     
     def _recognize_with_llm(self, query: str) -> IntentResult:
         """使用大模型进行意图识别"""
-        prompt = f"""请分析以下用户输入的意图，并判断是否需要检索知识库。
+        prompt = f"""你是一个“意图识别器”。请对用户输入做结构化分析：
+1) 任务分析：用户真正要做的任务是什么（task）
+2) 问题提取：用于检索/推理的核心查询是什么（extracted_query）
+3) 意图分类：question/chat/greeting/goodbye/thanks/unknown
+4) 是否需要 RAG：needs_rag=true/false（并说明 reason）
 
 用户输入: "{query}"
 
@@ -330,6 +337,8 @@ class IntentRecognizer:
     "confidence": 0.0-1.0,
     "needs_rag": true|false,
     "reason": "判断原因",
+    "task": "用户任务分析（一句话）",
+    "extracted_query": "核心问题/查询（尽量可直接用于检索）",
     "suggested_tags": {{
         "domain": "建议的领域",
         "module": "建议的模块",
@@ -366,7 +375,9 @@ class IntentRecognizer:
                     confidence=result_json.get("confidence", 0.5),
                     needs_rag=result_json.get("needs_rag", True),
                     reason=result_json.get("reason", "LLM分析"),
-                    suggested_tags=suggested_tags
+                    suggested_tags=suggested_tags,
+                    task=(result_json.get("task") or "").strip(),
+                    extracted_query=(result_json.get("extracted_query") or "").strip(),
                 )
             else:
                 # JSON解析失败，默认需要RAG
@@ -374,7 +385,9 @@ class IntentRecognizer:
                     intent=IntentType.NEED_RAG,
                     confidence=0.5,
                     needs_rag=True,
-                    reason="LLM输出解析失败，默认需要RAG"
+                    reason="LLM输出解析失败，默认需要RAG",
+                    task="",
+                    extracted_query=query,
                 )
                 
         except Exception as e:
@@ -383,7 +396,9 @@ class IntentRecognizer:
                 intent=IntentType.NEED_RAG,
                 confidence=0.3,
                 needs_rag=True,
-                reason=f"LLM调用失败: {str(e)}"
+                reason=f"LLM调用失败: {str(e)}",
+                task="",
+                extracted_query=query,
             )
     
     def _extract_json(self, text: str) -> Optional[Dict]:

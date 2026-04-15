@@ -43,12 +43,12 @@ class NavigationBar(QFrame):
         layout.setSpacing(8)
         
         # Logo/标题
-        logo_label = QLabel("SuperBizAgent")
+        logo_label = QLabel("多模态文档化助手")
         logo_label.setFont(QFont(Theme.current["font_family"], 18, QFont.Bold))
         logo_label.setStyleSheet(f"color: {Theme.current['primary']}; padding: 12px 8px;")
         layout.addWidget(logo_label)
         
-        subtitle = QLabel("智能视频分析与文本转换")
+        subtitle = QLabel("Multimodal Doc Assistant")
         subtitle.setFont(QFont(Theme.current["font_family"], 10))
         subtitle.setStyleSheet(f"color: {Theme.current['text_secondary']}; padding: 0 8px 12px;")
         layout.addWidget(subtitle)
@@ -105,7 +105,7 @@ class MainWindow(QMainWindow):
     
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("SuperBizAgent - 视频转文字处理工具")
+        self.setWindowTitle("多模态文档化助手")
         self.setMinimumSize(1200, 800)
         self.resize(1400, 900)
         

@@ -181,12 +181,14 @@ class PDFParser(BaseParser):
     def _parse_with_fitz(self, file_path: str, start_time: float) -> ProcessingResult:
         """使用PyMuPDF解析"""
         import fitz
+        import time
         
         doc = fitz.open(file_path)
         text_parts = []
         images = []
+        page_count = len(doc)
         
-        for page_num in range(len(doc)):
+        for page_num in range(page_count):
             page = doc[page_num]
             
             # 提取文本
@@ -211,7 +213,7 @@ class PDFParser(BaseParser):
                 text="\n".join(text_parts),
                 images=images,
                 metadata={
-                    "pages": len(doc),
+                    "pages": page_count,
                     "format": "PDF"
                 }
             ),
@@ -223,6 +225,7 @@ class PDFParser(BaseParser):
     def _parse_with_pdfplumber(self, file_path: str, start_time: float) -> ProcessingResult:
         """使用pdfplumber解析"""
         import pdfplumber
+        import time
         
         text_parts = []
         tables = []
@@ -255,6 +258,7 @@ class PDFParser(BaseParser):
     def _parse_with_pypdf2(self, file_path: str, start_time: float) -> ProcessingResult:
         """使用PyPDF2解析"""
         from PyPDF2 import PdfReader
+        import time
         
         reader = PdfReader(file_path)
         text_parts = []

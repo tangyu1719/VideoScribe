@@ -19,7 +19,7 @@ from theme import (
 
 
 class SuperBizAgentApp:
-    """SuperBizAgent Flet应用"""
+    """多模态文档化助手 Flet应用"""
     
     def __init__(self, page: ft.Page):
         self.page = page
@@ -29,7 +29,7 @@ class SuperBizAgentApp:
     
     def setup_page(self):
         """设置页面基础配置"""
-        self.page.title = "SuperBizAgent - AI智能助手"
+        self.page.title = "多模态文档化助手 (Multimodal Doc Assistant)"
         self.page.theme_mode = ft.ThemeMode.DARK
         self.page.bgcolor = TechBlueTheme.BG_DARK
         self.page.padding = 0

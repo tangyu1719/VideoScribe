@@ -34,6 +34,21 @@ def _load_db_config():
         'password': '',
         'database': 'rag_kb'
     }
+
+    # 优先复用项目统一 db.py 配置，避免 root 空密码导致 1045
+    try:
+        import db as project_db
+        merged = default_config.copy()
+        merged.update({
+            'host': project_db.DB_CONFIG.get('host', merged['host']),
+            'port': project_db.DB_CONFIG.get('port', merged['port']),
+            'user': project_db.DB_CONFIG.get('user', merged['user']),
+            'password': project_db.DB_CONFIG.get('password', merged['password']),
+        })
+        # db_manager 默认维护 rag_kb；若配置文件显式指定则后续覆盖
+        default_config = merged
+    except Exception:
+        pass
     
     for config_path in config_paths:
         if os.path.exists(config_path):
@@ -42,7 +57,11 @@ def _load_db_config():
                     config = json.load(f)
                     # 合并默认配置
                     merged = default_config.copy()
-                    merged.update(config)
+                    # 避免把空字符串密码覆盖掉已有可用配置
+                    safe_config = dict(config or {})
+                    if safe_config.get("password", None) == "":
+                        safe_config.pop("password", None)
+                    merged.update(safe_config)
                     return merged
             except Exception as e:
                 logger.warning(f"加载数据库配置失败: {e}")

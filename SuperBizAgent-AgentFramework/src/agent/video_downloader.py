@@ -29,15 +29,44 @@ VIDEO_DIR.mkdir(exist_ok=True)
 video_cache: Dict[str, str] = {}
 video_cache_lock = threading.Lock()
 
-# Whisper模型缓存
+# Whisper 模型缓存
 model_cache = None
 model_cache_lock = threading.Lock()
 
 
+def extract_clean_url(text: str) -> str:
+    """
+    从包含额外文本的字符串中提取纯净的 URL
+    
+    Args:
+        text: 可能包含 URL 的文本（如抖音分享文本）
+    
+    Returns:
+        纯净的 URL 字符串
+    
+    Examples:
+        >>> extract_clean_url("2.89 e@O.kc 05/03 Okp:/ 面试官：skill 解决了 agent 的什么痛点？#agent # ai 大模型 `https://v.douyin.com/F0hlcj9C0lE/` 复制此链接")
+        'https://v.douyin.com/F0hlcj9C0lE/'
+    """
+    # 清理反引号
+    text = text.strip('`')
+    
+    # 使用正则表达式提取 HTTP/HTTPS URL
+    url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+    matches = re.findall(url_pattern, text)
+    
+    if matches:
+        # 返回第一个匹配的 URL
+        return matches[0]
+    
+    # 如果没有找到 URL，返回原文本（已清理反引号）
+    return text
+
+
 def download_douyin_video(link: str, log_callback=None) -> Optional[str]:
     """
-    抖音视频专用下载方法 - 使用HTML解析方法下载抖音视频（免登录）
-    完整复制自video_gui.py download_douyin_video方法
+    抖音视频专用下载方法 - 使用 HTML 解析方法下载抖音视频（免登录）
+    完整复制自 video_gui.py download_douyin_video 方法
     """
     def log(msg, level="INFO"):
         if log_callback:
@@ -49,8 +78,9 @@ def download_douyin_video(link: str, log_callback=None) -> Optional[str]:
     try:
         log("使用抖音专用解析器下载视频...", "INFO")
         
-        # 清理链接
-        link = link.strip('`')
+        # 清理链接 - 提取纯净的 URL
+        link = extract_clean_url(link)
+        log(f"清理后的链接：{link}", "INFO")
         
         # 获取当前目录下的视频文件数量，作为总序号
         existing_videos = [f for f in os.listdir(VIDEO_DIR) if f.endswith('.mp4')]
@@ -239,8 +269,8 @@ def download_video(link: str, log_callback=None) -> Optional[str]:
     download_start = time.time()
     
     try:
-        # 清理链接中的反引号
-        link = link.strip('`')
+        # 清理链接中的反引号并提取纯净 URL
+        link = extract_clean_url(link)
         
         # 对于抖音链接，优先使用专用解析器
         if "douyin.com" in link or "tiktok.com" in link or "v.douyin.com" in link:
@@ -315,12 +345,21 @@ def download_video(link: str, log_callback=None) -> Optional[str]:
             "--fragment-retries", "15",  # 增加片段重试次数
             "--socket-timeout", "120",  # 增加 socket 超时到 120 秒，适应长视频
             "--http-chunk-size", "10M",  # 增大 HTTP 分块大小
-            "--rate-limit", "0",  # 不限速
             "--no-resize-buffer",  # 不调整缓冲区
             "--no-abort-on-error",  # 出错不中断
             "--continue",  # 断点续传
             "-o", output_file,
         ]
+
+        # 可选限速：仅当配置为正数时才传入，避免 "--rate-limit 0" 触发 yt-dlp 参数错误
+        rate_limit = os.environ.get("YTDLP_RATE_LIMIT", "").strip()
+        if rate_limit:
+            try:
+                if int(rate_limit) > 0:
+                    cmd.extend(["--rate-limit", rate_limit])
+                    log(f"启用下载限速：{rate_limit}", "INFO")
+            except ValueError:
+                log(f"忽略非法 YTDLP_RATE_LIMIT={rate_limit}", "WARNING")
         
         # 对于B站链接，尝试使用浏览器cookies提高下载速度
         if "bilibili.com" in link:

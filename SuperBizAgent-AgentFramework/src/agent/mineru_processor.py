@@ -13,9 +13,60 @@ from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+import sys
+import shutil
+import threading
+import tempfile
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+def _try_enable_local_mineru_models():
+    """
+    若用户已通过 `F:\\java\\MinerU` 下载模型并生成 `~/mineru.json`，
+    自动把 MINERU_MODEL_SOURCE 设为 local，避免每次联网拉取。
+    """
+    try:
+        cfg = os.path.join(os.path.expanduser("~"), "mineru.json")
+        if not os.path.exists(cfg):
+            return
+        data = json.load(open(cfg, "r", encoding="utf-8"))
+        models_dir = (data.get("models-dir") or {}).get("pipeline")
+        if models_dir and os.path.exists(models_dir):
+            os.environ.setdefault("MINERU_MODEL_SOURCE", "local")
+    except Exception:
+        pass
+
+_try_enable_local_mineru_models()
+
+
+def _patch_fast_langdetect_model_path():
+    """
+    fast_langdetect 在某些 Windows 中文路径下加载 lid.176.ftz 会失败。
+    这里把模型复制到 ASCII 路径并重定向 LOCAL_SMALL_MODEL_PATH，避免反复报错和回退。
+    """
+    try:
+        import fast_langdetect
+        from fast_langdetect.ft_detect import infer as ft_infer
+
+        src = Path(fast_langdetect.__file__).parent / "ft_detect" / "resources" / "lid.176.ftz"
+        if not src.exists():
+            return
+
+        dst_dir = Path("C:/mineru-fastlang-cache")
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        dst = dst_dir / "lid.176.ftz"
+        if not dst.exists() or dst.stat().st_size != src.stat().st_size:
+            shutil.copy2(src, dst)
+
+        ft_infer.LOCAL_SMALL_MODEL_PATH = dst
+        os.environ.setdefault("FTLANG_CACHE", str(dst_dir))
+
+        # 降低 fast_langdetect 警告刷屏，避免拖慢日志渲染
+        logging.getLogger("fast_langdetect").setLevel(logging.ERROR)
+        logging.getLogger("fast_langdetect.ft_detect.infer").setLevel(logging.ERROR)
+    except Exception:
+        pass
 
 
 class MinerUStatus(Enum):
@@ -57,6 +108,10 @@ class MinerUProcessor:
     4. 批量处理支持
     """
     
+    # 全局预热状态（避免多个页面/模块重复预热）
+    _global_warmed_up = False
+    _global_warmup_method = ""
+
     def __init__(self, output_dir: str = None):
         """
         初始化MinerU处理器
@@ -66,6 +121,8 @@ class MinerUProcessor:
         """
         self.output_dir = output_dir or os.path.join(os.path.dirname(__file__), "output")
         os.makedirs(self.output_dir, exist_ok=True)
+        self._warmup_lock = threading.Lock()
+        self._warmed_up = False
         
         # 检查MinerU是否安装
         self.mineru_available = self._check_mineru()
@@ -74,16 +131,90 @@ class MinerUProcessor:
             logger.info("[MinerU] 处理器初始化成功")
         else:
             logger.warning("[MinerU] 未安装，将使用备用处理方案")
+
+    def warmup(self, force: bool = False) -> MinerUResult:
+        """
+        预热 MinerU：在服务启动时提前加载模型，减少首次 PDF 处理等待。
+        返回 MinerUResult，便于上层界面输出日志。
+        """
+        with self._warmup_lock:
+            if MinerUProcessor._global_warmed_up and not force:
+                return MinerUResult(
+                    success=True,
+                    content="",
+                    markdown="",
+                    metadata={"method": MinerUProcessor._global_warmup_method or "warmup_cached"},
+                    error="",
+                )
+            if self._warmed_up and not force:
+                return MinerUResult(
+                    success=True,
+                    content="",
+                    markdown="",
+                    metadata={"method": "warmup_cached"},
+                    error="",
+                )
+
+            if not self.mineru_available:
+                return MinerUResult(success=False, error="MinerU 不可用，无法预热")
+
+            try:
+                from reportlab.lib.pagesizes import A4
+                from reportlab.pdfgen import canvas
+
+                with tempfile.TemporaryDirectory(prefix="mineru-warmup-") as td:
+                    test_pdf = os.path.join(td, "warmup.pdf")
+                    c = canvas.Canvas(test_pdf, pagesize=A4)
+                    c.setFont("Helvetica", 12)
+                    c.drawString(72, 780, "MINERU_WARMUP_SENTINEL")
+                    c.showPage()
+                    c.save()
+
+                    result = self.process_pdf(test_pdf)
+
+                # 只要预热流程已跑完一次就标记完成，避免重复首启预热拖慢启动。
+                # 若需要强制重跑，调用 warmup(force=True)。
+                if result.success:
+                    self._warmed_up = True
+                    MinerUProcessor._global_warmed_up = True
+                    MinerUProcessor._global_warmup_method = (result.metadata or {}).get("method", "warmup_cached")
+                return result
+            except Exception as e:
+                return MinerUResult(success=False, error=f"预热异常: {e}")
     
     def _check_mineru(self) -> bool:
         """检查MinerU是否已安装"""
         try:
-            # 尝试导入MinerU
-            import magic_pdf
-            logger.info("[MinerU] magic_pdf模块已安装")
-            return True
-        except ImportError:
-            logger.warning("[MinerU] magic_pdf模块未安装")
+            # 优先：项目投入使用的 mineru（本地源码常见路径 F:\java\MinerU）
+            try:
+                import mineru  # noqa: F401
+                logger.info("[MinerU] mineru 模块已安装")
+                return True
+            except ImportError:
+                pass
+
+            # 兼容：旧实现 magic_pdf
+            try:
+                import magic_pdf  # noqa: F401
+                logger.info("[MinerU] magic_pdf 模块已安装")
+                return True
+            except ImportError:
+                pass
+
+            local_src = r"F:\java\MinerU"
+            if os.path.isdir(local_src) and local_src not in sys.path:
+                sys.path.insert(0, local_src)
+                try:
+                    import mineru  # noqa: F401
+                    logger.info(f"[MinerU] 已从本地目录加载 mineru: {local_src}")
+                    return True
+                except ImportError:
+                    pass
+
+            logger.warning("[MinerU] 未检测到 mineru/magic_pdf，将使用备用处理方案")
+            return False
+        except Exception as e:
+            logger.warning(f"[MinerU] 检测失败，将使用备用处理方案: {e}")
             return False
     
     def process_pdf(self, pdf_path: str, method: str = "auto") -> MinerUResult:
@@ -101,14 +232,96 @@ class MinerUProcessor:
             return MinerUResult(success=False, error=f"文件不存在: {pdf_path}")
         
         if not self.mineru_available:
-            # 使用备用方案
             return self._process_pdf_fallback(pdf_path)
         
         try:
-            from magic_pdf.data.data_reader_writer import FileBasedDataWriter
-            from magic_pdf.data.dataset import PymuDocDataset
-            from magic_pdf.model.doc_analyze_by_custom_model import doc_analyze
-            from magic_pdf.config.enums import SupportedPdfParseMethod
+            try:
+                _patch_fast_langdetect_model_path()
+                # 你本地“投入使用”的 MinerU 是 F:\java\MinerU 的 `mineru` 包，不是 pip 的 magic_pdf。
+                # 这里直接调用 mineru 的 pipeline 链路产出 md，并读取最终 md 内容。
+                if r"F:\java\MinerU" not in sys.path and os.path.isdir(r"F:\java\MinerU"):
+                    sys.path.insert(0, r"F:\java\MinerU")
+
+                from mineru.cli.common import (  # type: ignore
+                    read_fn,
+                    prepare_env,
+                    convert_pdf_bytes_to_bytes_by_pypdfium2,
+                )
+                from mineru.data.data_reader_writer import FileBasedDataWriter  # type: ignore
+                from mineru.backend.pipeline.pipeline_analyze import doc_analyze as pipeline_doc_analyze  # type: ignore
+                from mineru.backend.pipeline.model_json_to_middle_json import (  # type: ignore
+                    result_to_middle_json as pipeline_result_to_middle_json,
+                )
+                from mineru.backend.pipeline.pipeline_middle_json_mkcontent import union_make as pipeline_union_make  # type: ignore
+                from mineru.utils.enum_class import MakeMode  # type: ignore
+
+                logger.info(f"[MinerU] 使用本地 mineru(pipeline) 解析 PDF: {pdf_path}")
+
+                pdf_bytes = read_fn(Path(pdf_path))
+                pdf_file_name = Path(pdf_path).stem
+                local_image_dir, local_md_dir = prepare_env(self.output_dir, pdf_file_name, "auto")
+                image_writer = FileBasedDataWriter(local_image_dir)
+                md_writer = FileBasedDataWriter(local_md_dir)
+
+                pdf_bytes_processed = convert_pdf_bytes_to_bytes_by_pypdfium2(pdf_bytes, 0, None)
+                # 性能开关：默认关闭公式/表格识别以加速普通文本型 PDF
+                formula_enable = os.environ.get("MINERU_PDF_FORMULA_ENABLE", "false").lower() == "true"
+                table_enable = os.environ.get("MINERU_PDF_TABLE_ENABLE", "false").lower() == "true"
+                infer_results, all_image_lists, all_pdf_docs, lang_list, ocr_enabled_list = pipeline_doc_analyze(
+                    [pdf_bytes_processed],
+                    ["ch"],
+                    parse_method="auto",
+                    formula_enable=formula_enable,
+                    table_enable=table_enable,
+                )
+
+                markdown_content = ""
+                for idx, model_list in enumerate(infer_results):
+                    import copy
+
+                    model_json = copy.deepcopy(model_list)
+                    images_list = all_image_lists[idx]
+                    pdf_doc = all_pdf_docs[idx]
+                    _lang = lang_list[idx]
+                    _ocr_enable = ocr_enabled_list[idx]
+
+                    middle_json = pipeline_result_to_middle_json(
+                        model_list,
+                        images_list,
+                        pdf_doc,
+                        image_writer,
+                        _lang,
+                        _ocr_enable,
+                        True,
+                    )
+                    pdf_info = middle_json["pdf_info"]
+                    markdown_content = pipeline_union_make(
+                        pdf_info, MakeMode.MM_MD, str(os.path.basename(local_image_dir))
+                    )
+                    md_writer.write_string(f"{pdf_file_name}.md", markdown_content)
+                    md_writer.write_string(f"{pdf_file_name}_middle.json", json.dumps(middle_json, ensure_ascii=False))
+                    md_writer.write_string(f"{pdf_file_name}_model.json", json.dumps(model_json, ensure_ascii=False))
+
+                markdown_content = (markdown_content or "").strip()
+                if markdown_content:
+                    return MinerUResult(
+                        success=True,
+                        content=markdown_content,
+                        markdown=markdown_content,
+                        metadata={
+                            "file_name": pdf_file_name,
+                            "file_path": pdf_path,
+                            "output_path": local_md_dir,
+                            "method": "mineru_pipeline",
+                        },
+                    )
+                raise RuntimeError("mineru 输出为空")
+            except Exception as e:
+                logger.warning(f"[MinerU] 本地 mineru 解析失败，将回退备用方案（不阻塞投入使用）: {e}")
+                return self._process_pdf_fallback(pdf_path)
+
+            # （保留）若未来环境装了 magic_pdf，可在这里补充回退分支；
+            # 当前生产环境以 mineru + 备用解析为主，避免因未安装 magic_pdf 而失败。
             
             logger.info(f"[MinerU] 开始处理PDF: {pdf_path}")
             
