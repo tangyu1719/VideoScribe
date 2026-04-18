@@ -1,0 +1,29 @@
+[
+  {
+    "file_path": "C:/Users/PC/Desktop/动态线程池笔记.txt",
+    "file_name": "动态线程池笔记.txt",
+    "file_type": ".txt",
+    "file_size": 16.8154296875,
+    "chunk_count": 34,
+    "added_at": "2026-04-09 00:47:13",
+    "vector_bound": true
+  },
+  {
+    "file_path": "F:/java/AIOPS/SuperBizAgent-release-2026-01-02/demo_wendanghua/output/JSON处理方案优化版.txt",
+    "file_name": "JSON处理方案优化版.txt",
+    "file_type": ".txt",
+    "file_size": 4.05859375,
+    "chunk_count": 41,
+    "added_at": "2026-04-09 00:53:48",
+    "vector_bound": true
+  },
+  {
+    "file_path": "F:/java/AIOPS/SuperBizAgent-release-2026-01-02/demo_wendanghua/output/AI/面试必背/AIOPS 项目知识库 - 副本.txt",
+    "file_name": "AIOPS 项目知识库 - 副本.txt",
+    "file_type": ".txt",
+    "file_size": 109.10546875,
+    "chunk_count": 301,
+    "added_at": "2026-04-09 02:05:41",
+    "vector_bound": true
+  }
+]

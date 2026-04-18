@@ -59,7 +59,7 @@ class ThoughtStepWidget:
         self.frame.pack(fill=tk.X, pady=2)
         
         # 头部（可点击折叠）
-        self.header = tk.Frame(self.frame, bg=style["bg"], relief=tk.RAISED, bd=1)
+        self.header = tk.Frame(self.frame, bg=style["bg"], relief=tk.RAISED, bd=1, cursor="hand2")
         self.header.pack(fill=tk.X)
         self.header.bind("<Button-1>", self._toggle)
         
@@ -70,7 +70,8 @@ class ThoughtStepWidget:
             text=status_icon,
             font=("微软雅黑", 12),
             bg=style["bg"],
-            fg=style["color"]
+            fg=style["color"],
+            cursor="hand2",
         )
         self.status_label.pack(side=tk.LEFT, padx=(10, 5), pady=8)
         self.status_label.bind("<Button-1>", self._toggle)
@@ -80,7 +81,8 @@ class ThoughtStepWidget:
             self.header,
             text=style["icon"],
             font=("微软雅黑", 12),
-            bg=style["bg"]
+            bg=style["bg"],
+            cursor="hand2",
         )
         self.icon_label.pack(side=tk.LEFT, padx=5, pady=8)
         self.icon_label.bind("<Button-1>", self._toggle)
@@ -91,7 +93,8 @@ class ThoughtStepWidget:
             text=self.thought.title,
             font=("微软雅黑", 11, "bold"),
             bg=style["bg"],
-            fg=style["color"]
+            fg=style["color"],
+            cursor="hand2",
         )
         self.title_label.pack(side=tk.LEFT, padx=5, pady=8)
         self.title_label.bind("<Button-1>", self._toggle)
@@ -102,7 +105,8 @@ class ThoughtStepWidget:
             text=self.thought.timestamp,
             font=("微软雅黑", 9),
             bg=style["bg"],
-            fg="#999999"
+            fg="#999999",
+            cursor="hand2",
         )
         self.time_label.pack(side=tk.RIGHT, padx=10, pady=8)
         self.time_label.bind("<Button-1>", self._toggle)
@@ -113,7 +117,8 @@ class ThoughtStepWidget:
             text="▼",
             font=("微软雅黑", 10),
             bg=style["bg"],
-            fg="#666666"
+            fg="#666666",
+            cursor="hand2",
         )
         self.arrow_label.pack(side=tk.RIGHT, padx=5, pady=8)
         self.arrow_label.bind("<Button-1>", self._toggle)
@@ -196,6 +201,8 @@ class ThoughtStepWidget:
         
         if self.on_toggle:
             self.on_toggle(self.is_expanded)
+        # 阻止事件继续冒泡到上层 Canvas（避免点击被滚动/刷新吞掉）
+        return "break"
     
     def update_status(self, status: str):
         """更新状态"""
@@ -255,7 +262,13 @@ class ReActThoughtChain:
             cursor="hand2"
         )
         self.toggle_all_btn.pack(side=tk.RIGHT)
-        self.toggle_all_btn.bind("<Button-1>", self._toggle_all)
+        def _on_toggle_all(_e=None):
+            self._toggle_all()
+            return "break"
+        # 按钮和标题区域都可点，且阻止冒泡
+        self.toggle_all_btn.bind("<Button-1>", _on_toggle_all)
+        self.header.bind("<Button-1>", _on_toggle_all)
+        self.title_label.bind("<Button-1>", _on_toggle_all)
         
         # 步骤容器
         self.steps_container = tk.Frame(self.frame, bg="#ffffff", relief=tk.RAISED, bd=1)
@@ -319,11 +332,8 @@ class ReActThoughtChain:
     
     def _toggle_all(self, event=None):
         """展开/收起全部"""
-        # 检查当前状态
-        any_expanded = any(step.is_expanded for step in self.steps)
-        
-        # 如果任意一个展开，则全部收起；否则全部展开
-        expand = not any_expanded
+        # 以按钮文案作为单一真相，避免“已有一步展开时点展开全部反而收起”
+        expand = ("展开全部" in self.toggle_all_btn.cget("text"))
         
         for step in self.steps:
             if expand and not step.is_expanded:
@@ -332,6 +342,7 @@ class ReActThoughtChain:
                 step._toggle()
         
         self.toggle_all_btn.config(text="[收起全部]" if expand else "[展开全部]")
+        return "break"
 
 
 def create_react_thought_chain(parent, on_step_toggle: Optional[Callable] = None) -> ReActThoughtChain:

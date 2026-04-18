@@ -1,0 +1,46 @@
+Flet桌面客户端手动下载说明
+================================
+
+由于网络问题，Python无法自动下载Flet桌面客户端，请手动下载：
+
+方法1：使用浏览器直接下载（推荐）
+--------------------------------
+1. 复制以下链接到浏览器地址栏：
+   https://github.com/flet-dev/flet/releases/download/v0.84.0/flet-windows.zip
+
+2. 或者使用镜像加速：
+   https://ghproxy.com/https://github.com/flet-dev/flet/releases/download/v0.84.0/flet-windows.zip
+
+3. 下载完成后，解压到以下目录：
+   C:\Users\PC\.flet\client\flet-desktop-0.84.0\
+
+4. 解压后目录结构应该是：
+   C:\Users\PC\.flet\client\flet-desktop-0.84.0\
+   ├── flet.exe
+   └── ... (其他文件)
+
+5. 然后运行：py main_app.py
+
+
+方法2：使用IDM/迅雷等下载工具
+--------------------------------
+1. 打开下载工具
+2. 新建任务，输入URL：
+   https://github.com/flet-dev/flet/releases/download/v0.84.0/flet-windows.zip
+3. 下载完成后解压到：
+   C:\Users\PC\.flet\client\flet-desktop-0.84.0\
+4. 运行：py main_app.py
+
+
+方法3：使用GitHub Desktop或其他Git工具
+----------------------------------------
+如果以上方法都不行，可以直接使用Web模式：
+   py main_app_web.py
+然后在浏览器访问：http://localhost:8550
+
+
+注意事项：
+--------
+- 确保梯子开启全局模式
+- 文件大小约 30-40 MB
+- 解压时不要有额外的文件夹层级

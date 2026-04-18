@@ -45,14 +45,10 @@ try:
     
     main_config = results[0]
     api_key = main_config['api_key']
-    # 防止把 /responses 当成 base_url 写入备选配置
-    base_url = (main_config['base_url'] or '').rstrip('/')
-    if base_url.endswith('/responses'):
-        base_url = base_url[:-len('/responses')].rstrip('/')
+    base_url = main_config['base_url']
     model = main_config['model']
     
-    # Windows 控制台可能是 GBK，避免输出不可编码字符（如 ✓）
-    print("OK 主接入点配置:")
+    print(f"✓ 主接入点配置:")
     print(f"  API Key: {api_key[:20]}...")
     print(f"  Base URL: {base_url}")
     print(f"  Model: {model}")
@@ -65,7 +61,7 @@ except Exception as e:
 try:
     import json
     backup_configs = json.loads(main_config['backup_configs']) if main_config['backup_configs'] else []
-    print(f"OK 现有备选配置数量：{len(backup_configs)}")
+    print(f"✓ 现有备选配置数量：{len(backup_configs)}")
 except Exception as e:
     print(f"解析备份配置失败：{e}")
     backup_configs = []
@@ -78,7 +74,7 @@ for config in API_CONFIGS:
         'name': config['name'],
         'api_key': api_key,  # 使用相同的 API Key
         'base_url': base_url,  # 使用相同的 Base URL
-        'model': config['name'],  # 按配置名写入，便于区分展示
+        'model': model,  # 使用相同的 Model
         'endpoint_id': config['endpoint_id'],
         'created_at': datetime.now().isoformat()
     }
@@ -86,10 +82,10 @@ for config in API_CONFIGS:
     # 检查是否已存在
     exists = any(b['endpoint_id'] == config['endpoint_id'] for b in backup_configs)
     if exists:
-        print(f"  WARN {config['name']} 已存在，跳过")
+        print(f"  ⚠ {config['name']} 已存在，跳过")
     else:
         backup_configs.append(new_backup)
-        print(f"  OK 添加 {config['name']} ({config['endpoint_id']})")
+        print(f"  ✓ 添加 {config['name']} ({config['endpoint_id']})")
 
 # 更新数据库
 print("\n正在保存配置到数据库...")
@@ -100,8 +96,8 @@ try:
            WHERE id=%s OR enabled=TRUE""",
         (json.dumps(backup_configs, ensure_ascii=False), 'default')
     )
-    print("OK 配置已保存到数据库")
-    print(f"OK 总备选配置数量：{len(backup_configs)}")
+    print(f"✓ 配置已保存到数据库")
+    print(f"✓ 总备选配置数量：{len(backup_configs)}")
     
 except Exception as e:
     print(f"保存失败：{e}")

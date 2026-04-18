@@ -1,0 +1,704 @@
+[
+  {
+    "ts": 1776444159,
+    "path": "/api/settings/modules",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 9,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776444159,
+    "path": "/api/health",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 4,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776444159,
+    "path": "/api/settings/modules",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 1,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776444159,
+    "path": "/api/workflow/run",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 2,
+    "req_excerpt": "\"{\\\"payload\\\":{\\\"x\\\":1}}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776444159,
+    "path": "/api/ops/observability/overview",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 2,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776444159,
+    "path": "/api/ops/observability/events",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 3,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776444159,
+    "path": "/api/ops/route/suggestions",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 1,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776444159,
+    "path": "/api/ops/route/mark-failed",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 2,
+    "req_excerpt": "\"{\\\"model_id\\\":\\\"ep-test\\\",\\\"error_type\\\":\\\"timeout\\\",\\\"context\\\":{\\\"src\\\":\\\"ut\\\"}}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776444159,
+    "path": "/api/ops/route/reconfigure",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 4,
+    "req_excerpt": "\"{\\\"model_id\\\":\\\"ep-test\\\",\\\"action\\\":\\\"degrade_weight\\\"}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776444159,
+    "path": "/api/settings/modules",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 1,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776444159,
+    "path": "/api/ops/route/reconfigure",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 3,
+    "req_excerpt": "\"{\\\"model_id\\\":\\\"ep-test\\\",\\\"action\\\":\\\"disable\\\"}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776444159,
+    "path": "/api/settings/modules",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 1,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776444159,
+    "path": "/api/ops/route/rollback-last",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 4,
+    "req_excerpt": "\"{\\\"history_index\\\":-1}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776444159,
+    "path": "/api/ops/route/rollback-last",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 2,
+    "req_excerpt": "\"{\\\"history_index\\\":0}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776444159,
+    "path": "/api/settings/modules/prompt_center",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 4,
+    "req_excerpt": "\"{\\\"data\\\":{\\\"chat_agent\\\":{\\\"layer1_role_flow\\\":\\\"role-flow\\\",\\\"layer2_rules\\\":\\\"rules\\\",\\\"layer2_constraints\\\":\\\"constraints\\\",\\\"layer2_reply_format\\\":\\\"format\\\",\\\"layer3_eval_strategy\\\":\\\"eval\\\",\\\"version\\\":2,\\\"changelog\\\":\\\"v2 change\\\"}}}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776444159,
+    "path": "/api/settings/modules",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 1,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776444159,
+    "path": "/api/settings/modules/runtime_pools",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 3,
+    "req_excerpt": "\"{\\\"data\\\":{\\\"system_workers\\\":16,\\\"queue_max_size\\\":88}}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776444159,
+    "path": "/api/settings/modules",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 2,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776445478,
+    "path": "/api/settings/modules",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 4,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776445478,
+    "path": "/api/menu/tree",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 3,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776445478,
+    "path": "/api/menu/tree",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 3,
+    "req_excerpt": "\"{\\\"tree\\\":{\\\"version\\\":2,\\\"items\\\":[{\\\"key\\\":\\\"video\\\",\\\"title\\\":\\\"链接文档化\\\",\\\"children\\\":[]},{\\\"key\\\":\\\"ops\\\",\\\"title\\\":\\\"OPS运维\\\",\\\"children\\\":[{\\\"key\\\":\\\"ops_agent\\\",\\\"title\\\":\\\"运维AGENT\\\"}]}]}}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776445478,
+    "path": "/api/health",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 1,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776445478,
+    "path": "/api/settings/modules",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 2,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776445478,
+    "path": "/api/workflow/run",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 2,
+    "req_excerpt": "\"{\\\"payload\\\":{\\\"x\\\":1}}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776445478,
+    "path": "/api/ops/observability/overview",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 2,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776445478,
+    "path": "/api/ops/observability/events",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 2,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776445478,
+    "path": "/api/ops/route/suggestions",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 3,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776445478,
+    "path": "/api/ops/route/mark-failed",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 5,
+    "req_excerpt": "\"{\\\"model_id\\\":\\\"ep-test\\\",\\\"error_type\\\":\\\"timeout\\\",\\\"context\\\":{\\\"src\\\":\\\"ut\\\"}}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776445478,
+    "path": "/api/ops/route/reconfigure",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 5,
+    "req_excerpt": "\"{\\\"model_id\\\":\\\"ep-test\\\",\\\"action\\\":\\\"degrade_weight\\\"}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776445478,
+    "path": "/api/settings/modules",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 2,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776445478,
+    "path": "/api/ops/route/reconfigure",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 3,
+    "req_excerpt": "\"{\\\"model_id\\\":\\\"ep-test\\\",\\\"action\\\":\\\"disable\\\"}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776445478,
+    "path": "/api/settings/modules",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 2,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776445478,
+    "path": "/api/ops/route/rollback-last",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 4,
+    "req_excerpt": "\"{\\\"history_index\\\":-1}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776445478,
+    "path": "/api/ops/route/rollback-last",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 3,
+    "req_excerpt": "\"{\\\"history_index\\\":0}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776445478,
+    "path": "/api/settings/modules/prompt_center",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 4,
+    "req_excerpt": "\"{\\\"data\\\":{\\\"chat_agent\\\":{\\\"layer1_role_flow\\\":\\\"role-flow\\\",\\\"layer2_rules\\\":\\\"rules\\\",\\\"layer2_constraints\\\":\\\"constraints\\\",\\\"layer2_reply_format\\\":\\\"format\\\",\\\"layer3_eval_strategy\\\":\\\"eval\\\",\\\"version\\\":2,\\\"changelog\\\":\\\"v2 change\\\"}}}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776445478,
+    "path": "/api/settings/modules",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 1,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776445478,
+    "path": "/api/settings/modules/runtime_pools",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 3,
+    "req_excerpt": "\"{\\\"data\\\":{\\\"system_workers\\\":16,\\\"queue_max_size\\\":88}}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776445478,
+    "path": "/api/settings/modules",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 2,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776446757,
+    "path": "/api/settings/modules",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 19,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776446757,
+    "path": "/api/menu/tree",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 2,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776446757,
+    "path": "/api/menu/tree",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 13,
+    "req_excerpt": "\"{\\\"tree\\\":{\\\"version\\\":2,\\\"items\\\":[{\\\"key\\\":\\\"video\\\",\\\"title\\\":\\\"链接文档化\\\",\\\"children\\\":[]},{\\\"key\\\":\\\"ops\\\",\\\"title\\\":\\\"OPS运维\\\",\\\"children\\\":[{\\\"key\\\":\\\"ops_agent\\\",\\\"title\\\":\\\"运维AGENT\\\"}]}]}}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776446757,
+    "path": "/api/health",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 93,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776446757,
+    "path": "/api/settings/modules",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 42,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776446757,
+    "path": "/api/workflow/run",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 60,
+    "req_excerpt": "\"{\\\"payload\\\":{\\\"x\\\":1}}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776446757,
+    "path": "/api/ops/observability/overview",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 42,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776446757,
+    "path": "/api/ops/observability/events",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 14,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776446758,
+    "path": "/api/ops/route/suggestions",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 18,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776446758,
+    "path": "/api/ops/route/mark-failed",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 33,
+    "req_excerpt": "\"{\\\"model_id\\\":\\\"ep-test\\\",\\\"error_type\\\":\\\"timeout\\\",\\\"context\\\":{\\\"src\\\":\\\"ut\\\"}}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776446758,
+    "path": "/api/ops/route/reconfigure",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 19,
+    "req_excerpt": "\"{\\\"model_id\\\":\\\"ep-test\\\",\\\"action\\\":\\\"degrade_weight\\\"}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776446758,
+    "path": "/api/settings/modules",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 17,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776446758,
+    "path": "/api/ops/route/reconfigure",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 83,
+    "req_excerpt": "\"{\\\"model_id\\\":\\\"ep-test\\\",\\\"action\\\":\\\"disable\\\"}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776446758,
+    "path": "/api/settings/modules",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 10,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776446758,
+    "path": "/api/ops/route/rollback-last",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 16,
+    "req_excerpt": "\"{\\\"history_index\\\":-1}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776446758,
+    "path": "/api/ops/route/rollback-last",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 7,
+    "req_excerpt": "\"{\\\"history_index\\\":0}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776446758,
+    "path": "/api/settings/modules/prompt_center",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 18,
+    "req_excerpt": "\"{\\\"data\\\":{\\\"chat_agent\\\":{\\\"layer1_role_flow\\\":\\\"role-flow\\\",\\\"layer2_rules\\\":\\\"rules\\\",\\\"layer2_constraints\\\":\\\"constraints\\\",\\\"layer2_reply_format\\\":\\\"format\\\",\\\"layer3_eval_strategy\\\":\\\"eval\\\",\\\"version\\\":2,\\\"changelog\\\":\\\"v2 change\\\"}}}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776446758,
+    "path": "/api/settings/modules",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 48,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776446758,
+    "path": "/api/settings/modules/runtime_pools",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 3,
+    "req_excerpt": "\"{\\\"data\\\":{\\\"system_workers\\\":16,\\\"queue_max_size\\\":88}}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776446758,
+    "path": "/api/settings/modules",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 3,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776446774,
+    "path": "/api/settings/modules",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 52,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776446774,
+    "path": "/api/menu/tree",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 7,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776446774,
+    "path": "/api/menu/tree",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 11,
+    "req_excerpt": "\"{\\\"tree\\\":{\\\"version\\\":2,\\\"items\\\":[{\\\"key\\\":\\\"video\\\",\\\"title\\\":\\\"链接文档化\\\",\\\"children\\\":[]},{\\\"key\\\":\\\"ops\\\",\\\"title\\\":\\\"OPS运维\\\",\\\"children\\\":[{\\\"key\\\":\\\"ops_agent\\\",\\\"title\\\":\\\"运维AGENT\\\"}]}]}}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776446774,
+    "path": "/api/health",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 2,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776446774,
+    "path": "/api/settings/modules",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 4,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776446774,
+    "path": "/api/workflow/run",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 6,
+    "req_excerpt": "\"{\\\"payload\\\":{\\\"x\\\":1}}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776446774,
+    "path": "/api/ops/observability/overview",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 11,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776446774,
+    "path": "/api/ops/observability/events",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 11,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776446774,
+    "path": "/api/ops/route/suggestions",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 23,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776446774,
+    "path": "/api/ops/route/mark-failed",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 31,
+    "req_excerpt": "\"{\\\"model_id\\\":\\\"ep-test\\\",\\\"error_type\\\":\\\"timeout\\\",\\\"context\\\":{\\\"src\\\":\\\"ut\\\"}}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776446774,
+    "path": "/api/ops/route/reconfigure",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 23,
+    "req_excerpt": "\"{\\\"model_id\\\":\\\"ep-test\\\",\\\"action\\\":\\\"degrade_weight\\\"}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776446774,
+    "path": "/api/settings/modules",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 3,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776446774,
+    "path": "/api/ops/route/reconfigure",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 8,
+    "req_excerpt": "\"{\\\"model_id\\\":\\\"ep-test\\\",\\\"action\\\":\\\"disable\\\"}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776446774,
+    "path": "/api/settings/modules",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 69,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776446775,
+    "path": "/api/ops/route/rollback-last",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 26,
+    "req_excerpt": "\"{\\\"history_index\\\":-1}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776446775,
+    "path": "/api/ops/route/rollback-last",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 23,
+    "req_excerpt": "\"{\\\"history_index\\\":0}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776446775,
+    "path": "/api/settings/modules/prompt_center",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 30,
+    "req_excerpt": "\"{\\\"data\\\":{\\\"chat_agent\\\":{\\\"layer1_role_flow\\\":\\\"role-flow\\\",\\\"layer2_rules\\\":\\\"rules\\\",\\\"layer2_constraints\\\":\\\"constraints\\\",\\\"layer2_reply_format\\\":\\\"format\\\",\\\"layer3_eval_strategy\\\":\\\"eval\\\",\\\"version\\\":2,\\\"changelog\\\":\\\"v2 change\\\"}}}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776446775,
+    "path": "/api/settings/modules",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 7,
+    "req_excerpt": "",
+    "error": ""
+  },
+  {
+    "ts": 1776446775,
+    "path": "/api/settings/modules/runtime_pools",
+    "method": "POST",
+    "status_code": 200,
+    "cost_ms": 6,
+    "req_excerpt": "\"{\\\"data\\\":{\\\"system_workers\\\":16,\\\"queue_max_size\\\":88}}\"",
+    "error": ""
+  },
+  {
+    "ts": 1776446775,
+    "path": "/api/settings/modules",
+    "method": "GET",
+    "status_code": 200,
+    "cost_ms": 3,
+    "req_excerpt": "",
+    "error": ""
+  }
+]

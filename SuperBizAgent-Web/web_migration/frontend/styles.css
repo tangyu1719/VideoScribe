@@ -1,0 +1,112 @@
+.page-root {
+  min-height: 100vh;
+  background: #f2f3f5;
+}
+
+.sider {
+  background: #f7f8fa;
+  border-right: 1px solid #e5e7eb;
+  padding: 14px 10px;
+}
+
+.brand-title {
+  font-size: 34px;
+  font-weight: 700;
+  margin: 0;
+  color: #111827;
+}
+
+.brand-sub {
+  margin: 4px 0 14px;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.nav-menu {
+  border-right: 0 !important;
+  background: transparent !important;
+}
+
+.main-area {
+  padding: 14px;
+}
+
+.panel-card {
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+}
+
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.toolbar-row .grow {
+  flex: 1;
+}
+
+.config-block {
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.actions-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.actions-row .right {
+  margin-left: auto;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.status-line {
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 10px;
+  color: #374151;
+}
+
+.prompt-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.prompt-head .hint {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.prompt-head .expand {
+  margin-left: auto;
+}
+
+.log-box {
+  min-height: 180px;
+  max-height: 250px;
+  overflow: auto;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.sub-title {
+  font-weight: 600;
+  color: #111827;
+  margin: 8px 0;
+}

@@ -99,6 +99,36 @@
         "content": "我当前可调用的工具按用途分类如下：\n### 一、项目代码操作类\n| 工具名 | 功能 |\n|--------|------|\n| `search` | 项目目录内文本搜索，支持指定文件类型、最大匹配数 |\n| `read` | 读取项目文件内容，支持指定行范围 |\n| `write` | 写入项目文件，支持覆盖/追加模式 |\n| `replace` | 对指定文件执行字符串替换 |\n| `terminal` | 在项目根目录执行终端命令 |\n\n### 二、信息搜索类\n| 工具名 | 功能 |\n|--------|------|\n| `web_search` | 联网通用搜索，无需额外API密钥 |\n| `github` | GitHub仓库信息查询、代码搜索 |\n| `rag_search` | 检索本地知识库内容 |\n| `agentic_rag_query` | 基于Agentic RAG回答复杂专业问题 |\n\n### 三、网页操作类\n| 工具名 | 功能 |\n|--------|------|\n| `playwright` | 对指定网页截图 |\n| `preview` | 用系统浏览器打开预览URL或本地文件 |\n\n### 四、智能处理&工作流类\n| 工具名 | 功能 |\n|--------|------|\n| `intent_recognize` | 识别用户查询意图 |\n| `query_rewrite` | 改写优化用户查询语句 |\n| `list_workflow_nodes` | 列出当前可执行的工作流节点ID |\n| `run_workflow_node` | 执行指定的工作流节点，支持传入自定义配置/上下文 |",
         "thinking": "",
         "timestamp": "2026-04-14T20:18:35.742530"
+      },
+      {
+        "role": "user",
+        "content": "你可以使用哪些工具？",
+        "images": [],
+        "timestamp": "2026-04-15T14:50:27.304604"
+      },
+      {
+        "role": "assistant",
+        "content": "我可使用的工具按功能分为7大类，具体如下：\n\n| 分类 | 工具列表 | 核心功能 |\n|------|----------|----------|\n| 项目文件操作 | read/read_file、write/write_file、replace/replace_text、search | 项目内文件读写、文本替换、全局文本搜索 |\n| 开源检索 | github | GitHub仓库信息查询、代码搜索 |\n| 网页/浏览操作 | playwright、preview、web_search | 网页截图、URL/本地文件预览、联网公开信息搜索 |\n| 终端执行 | terminal/terminal_exec | 项目根目录下执行任意终端命令 |\n| 知识库/问答增强 | intent_recognize、query_rewrite、rag_search、agentic_rag_query、rag_agentic_answer | 用户意图识别、查询改写、本地知识库检索、复杂专业问题Agentic RAG回答 |\n| 工作流编排 | list_workflow_nodes、run_workflow_node | 可执行工作流节点查询、指定工作流节点执行 |\n| 多模态/内容处理 | multimodal_to_text、link_multimodal_pipeline、video_link_downloader_strict、template_controlled_doc_generation、image_ocr_to_text | 多模态内容转文本、链接自动识别解析下载、视频下载、模板控制文档生成、图片OCR转文本 |",
+        "thinking": "",
+        "timestamp": "2026-04-15T14:50:27.510769"
+      },
+      {
+        "role": "user",
+        "content": "你可以使用哪些工具",
+        "images": [],
+        "timestamp": "2026-04-16T23:11:21.959315"
+      },
+      {
+        "role": "user",
+        "content": "你可以使用哪些工具",
+        "images": [],
+        "timestamp": "2026-04-17T01:36:29.807443"
+      },
+      {
+        "role": "assistant",
+        "content": "【回答元信息】\n- 回答类型: Agent执行回答\n- 置信度说明: 中（由Agent执行链路生成）\n- 溯源信息:\n- [1] 工具调用: list_workflow_nodes\n\n我可使用的工具分为**内置通用工具**和**可编排工作流节点**两大类：\n---\n### 一、内置通用工具\n| 类别         | 工具能力                                                                 |\n|--------------|--------------------------------------------------------------------------|\n| 搜索类       | 本地项目文本搜索、GitHub仓库/代码查询、全网网页搜索、本地知识库RAG检索/Agentic RAG复杂问答 |\n| 文件/终端操作 | 项目文件读写/内容替换、终端命令执行、路径预览                             |\n| 多模态/网页处理 | Playwright网页截图、图片OCR转文本、多模态内容统一转文本、严格视频链接下载 |\n| 查询预处理   | 用户意图识别、查询改写优化                                               |\n---\n### 二、可编排工作流节点（可按需组合调度）\n| 节点ID                        | 核心能力                                                                 |\n|-------------------------------|--------------------------------------------------------------------------|\n| agent_process                 | 智能Agent通用处理流程                                                     |\n| download_video/download_video_strict | 视频文件下载                                                             |\n| generate_markdown             | 通用Markdown内容生成                                                     |\n| link_multimodal_pipeline      | 链接自动识别+内容抓取+规范化处理全链路                                   |\n| speech_to_text                | 语音内容转文本                                                           |\n| summarize_content             | 长内容自动摘要生成                                                       |\n| sync_feishu_only              | 内容同步到飞书文档                                                       |\n| template_controlled_doc_generation | 基于指定模板生成结构化文档                                               |",
+        "thinking": "",
+        "timestamp": "2026-04-17T01:36:30.483626"
       }
     ]
   }

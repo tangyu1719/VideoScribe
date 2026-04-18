@@ -1,0 +1,41 @@
+{
+  "scheduler_running": false,
+  "scheduler_config": {
+    "mode": "manual"
+  },
+  "current_run": null,
+  "runs": [
+    {
+      "run_id": "7697bf4e-7e8d-4f73-b3a3-d5e9653179f1",
+      "status": "running",
+      "created_at": 1776238049,
+      "payload": {
+        "workflow_id": "wf1"
+      }
+    },
+    {
+      "run_id": "6fb2d686-6468-4e80-8cd7-9e268bf59c15",
+      "status": "running",
+      "created_at": 1776238281,
+      "payload": {
+        "workflow_id": "wf1"
+      }
+    },
+    {
+      "run_id": "82a8107c-c7f2-480e-b0a7-497214054b1c",
+      "status": "running",
+      "created_at": 1776238660,
+      "payload": {
+        "workflow_id": "wf1"
+      }
+    },
+    {
+      "run_id": "0bb17b0c-0cb9-4e6d-90ed-2db7a640e1a8",
+      "status": "running",
+      "created_at": 1776241022,
+      "payload": {
+        "workflow_id": "wf1"
+      }
+    }
+  ]
+}

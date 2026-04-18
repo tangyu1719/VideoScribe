@@ -1,0 +1,2 @@
+# 仅用于 scripts/get_feishu_fldcn_playwright.py（获取 fldcn 辅助脚本）
+playwright>=1.40.0

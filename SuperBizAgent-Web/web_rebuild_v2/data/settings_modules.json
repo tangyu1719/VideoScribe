@@ -1,0 +1,375 @@
+{
+  "ai_gateway": {
+    "provider": "ark",
+    "providers": {
+      "ark": {
+        "base_url": "",
+        "api_key": "",
+        "endpoint_id": "",
+        "timeout_sec": 90
+      },
+      "openai": {
+        "base_url": "",
+        "api_key": "",
+        "model": "",
+        "timeout_sec": 90
+      },
+      "anthropic": {
+        "base_url": "",
+        "api_key": "",
+        "model": "",
+        "timeout_sec": 90
+      }
+    },
+    "routing": {
+      "mode": "priority",
+      "task_routes": {
+        "qa": [],
+        "summary": [],
+        "ops": []
+      },
+      "last_ops_action": {
+        "action": "rollback",
+        "model_id": "ep-test",
+        "updated_at": 1776446775,
+        "target_history_index": 0
+      },
+      "ops_history": [
+        {
+          "action": "degrade_weight",
+          "model_id": "ep-test",
+          "note": "ops agent suggested route compensation",
+          "updated_at": 1776403357
+        },
+        {
+          "action": "disable",
+          "model_id": "ep-test",
+          "note": "ops agent suggested route compensation",
+          "updated_at": 1776403357
+        },
+        {
+          "action": "degrade_weight",
+          "model_id": "ep-test",
+          "note": "ops agent suggested route compensation",
+          "updated_at": 1776422491,
+          "before": {
+            "model_id": "ep-test",
+            "weight": 0,
+            "status": "disabled"
+          },
+          "after": {
+            "model_id": "ep-test",
+            "weight": 1,
+            "status": "disabled"
+          }
+        },
+        {
+          "action": "disable",
+          "model_id": "ep-test",
+          "note": "ops agent suggested route compensation",
+          "updated_at": 1776422491,
+          "before": {
+            "model_id": "ep-test",
+            "weight": 1,
+            "status": "disabled"
+          },
+          "after": {
+            "model_id": "ep-test",
+            "weight": 0,
+            "status": "disabled"
+          }
+        },
+        {
+          "action": "rollback",
+          "model_id": "ep-test",
+          "updated_at": 1776422491,
+          "target_history_index": 3
+        },
+        {
+          "action": "degrade_weight",
+          "model_id": "ep-test",
+          "note": "ops agent suggested route compensation",
+          "updated_at": 1776422806,
+          "before": {
+            "model_id": "ep-test",
+            "weight": 1,
+            "status": "disabled"
+          },
+          "after": {
+            "model_id": "ep-test",
+            "weight": 1,
+            "status": "disabled"
+          }
+        },
+        {
+          "action": "disable",
+          "model_id": "ep-test",
+          "note": "ops agent suggested route compensation",
+          "updated_at": 1776422806,
+          "before": {
+            "model_id": "ep-test",
+            "weight": 1,
+            "status": "disabled"
+          },
+          "after": {
+            "model_id": "ep-test",
+            "weight": 0,
+            "status": "disabled"
+          }
+        },
+        {
+          "action": "rollback",
+          "model_id": "ep-test",
+          "updated_at": 1776422806,
+          "target_history_index": 6
+        },
+        {
+          "action": "rollback",
+          "model_id": "ep-test",
+          "updated_at": 1776422806,
+          "target_history_index": 0
+        },
+        {
+          "action": "degrade_weight",
+          "model_id": "ep-test",
+          "note": "ops agent suggested route compensation",
+          "updated_at": 1776444159,
+          "before": {
+            "model_id": "ep-test",
+            "weight": 10,
+            "status": "active"
+          },
+          "after": {
+            "model_id": "ep-test",
+            "weight": 1,
+            "status": "active"
+          }
+        },
+        {
+          "action": "disable",
+          "model_id": "ep-test",
+          "note": "ops agent suggested route compensation",
+          "updated_at": 1776444159,
+          "before": {
+            "model_id": "ep-test",
+            "weight": 1,
+            "status": "active"
+          },
+          "after": {
+            "model_id": "ep-test",
+            "weight": 0,
+            "status": "disabled"
+          }
+        },
+        {
+          "action": "rollback",
+          "model_id": "ep-test",
+          "updated_at": 1776444159,
+          "target_history_index": 10
+        },
+        {
+          "action": "rollback",
+          "model_id": "ep-test",
+          "updated_at": 1776444159,
+          "target_history_index": 0
+        },
+        {
+          "action": "degrade_weight",
+          "model_id": "ep-test",
+          "note": "ops agent suggested route compensation",
+          "updated_at": 1776445478,
+          "before": {
+            "model_id": "ep-test",
+            "weight": 10,
+            "status": "active"
+          },
+          "after": {
+            "model_id": "ep-test",
+            "weight": 1,
+            "status": "active"
+          }
+        },
+        {
+          "action": "disable",
+          "model_id": "ep-test",
+          "note": "ops agent suggested route compensation",
+          "updated_at": 1776445478,
+          "before": {
+            "model_id": "ep-test",
+            "weight": 1,
+            "status": "active"
+          },
+          "after": {
+            "model_id": "ep-test",
+            "weight": 0,
+            "status": "disabled"
+          }
+        },
+        {
+          "action": "rollback",
+          "model_id": "ep-test",
+          "updated_at": 1776445478,
+          "target_history_index": 14
+        },
+        {
+          "action": "rollback",
+          "model_id": "ep-test",
+          "updated_at": 1776445478,
+          "target_history_index": 0
+        },
+        {
+          "action": "degrade_weight",
+          "model_id": "ep-test",
+          "note": "ops agent suggested route compensation",
+          "updated_at": 1776446758,
+          "before": {
+            "model_id": "ep-test",
+            "weight": 10,
+            "status": "active"
+          },
+          "after": {
+            "model_id": "ep-test",
+            "weight": 1,
+            "status": "active"
+          }
+        },
+        {
+          "action": "disable",
+          "model_id": "ep-test",
+          "note": "ops agent suggested route compensation",
+          "updated_at": 1776446758,
+          "before": {
+            "model_id": "ep-test",
+            "weight": 1,
+            "status": "active"
+          },
+          "after": {
+            "model_id": "ep-test",
+            "weight": 0,
+            "status": "disabled"
+          }
+        },
+        {
+          "action": "rollback",
+          "model_id": "ep-test",
+          "updated_at": 1776446758,
+          "target_history_index": 18
+        },
+        {
+          "action": "rollback",
+          "model_id": "ep-test",
+          "updated_at": 1776446758,
+          "target_history_index": 0
+        },
+        {
+          "action": "degrade_weight",
+          "model_id": "ep-test",
+          "note": "ops agent suggested route compensation",
+          "updated_at": 1776446774,
+          "before": {
+            "model_id": "ep-test",
+            "weight": 10,
+            "status": "active"
+          },
+          "after": {
+            "model_id": "ep-test",
+            "weight": 1,
+            "status": "active"
+          }
+        },
+        {
+          "action": "disable",
+          "model_id": "ep-test",
+          "note": "ops agent suggested route compensation",
+          "updated_at": 1776446774,
+          "before": {
+            "model_id": "ep-test",
+            "weight": 1,
+            "status": "active"
+          },
+          "after": {
+            "model_id": "ep-test",
+            "weight": 0,
+            "status": "disabled"
+          }
+        },
+        {
+          "action": "rollback",
+          "model_id": "ep-test",
+          "updated_at": 1776446775,
+          "target_history_index": 22
+        },
+        {
+          "action": "rollback",
+          "model_id": "ep-test",
+          "updated_at": 1776446775,
+          "target_history_index": 0
+        }
+      ],
+      "model_pool": [
+        {
+          "model_id": "ep-test",
+          "weight": 10,
+          "status": "active"
+        }
+      ]
+    }
+  },
+  "agent_models": {
+    "doc_standardize": {
+      "strategy": "route",
+      "forced_model": "",
+      "temperature": 0.2,
+      "top_p": 0.9
+    },
+    "doc_summarize": {
+      "strategy": "route",
+      "forced_model": "",
+      "temperature": 0.4,
+      "top_p": 0.9
+    },
+    "qa_orchestrator": {
+      "strategy": "route",
+      "forced_model": "",
+      "temperature": 0.5,
+      "top_p": 0.9
+    },
+    "ops_agent": {
+      "strategy": "priority",
+      "forced_model": "",
+      "temperature": 0.2,
+      "top_p": 0.8
+    }
+  },
+  "prompt_center": {
+    "chat_agent": {
+      "layer1_role_flow": "role-flow",
+      "layer2_rules": "rules",
+      "layer2_constraints": "constraints",
+      "layer2_reply_format": "format",
+      "layer3_eval_strategy": "eval",
+      "version": 2,
+      "changelog": "v2 change",
+      "updated_at": 1776446775
+    },
+    "doc_standardize_agent": {
+      "version": 1,
+      "updated_at": 1776446775,
+      "changelog": ""
+    },
+    "doc_summarize_agent": {
+      "version": 1,
+      "updated_at": 1776446775,
+      "changelog": ""
+    },
+    "ops_agent": {
+      "version": 1,
+      "updated_at": 1776446775,
+      "changelog": ""
+    }
+  },
+  "runtime_pools": {
+    "system_workers": 16,
+    "queue_max_size": 88
+  }
+}

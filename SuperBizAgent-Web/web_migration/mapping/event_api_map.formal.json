@@ -1,0 +1,786 @@
+{
+  "meta": {
+    "source_file": "..\\..\\src\\agent\\video_gui.py",
+    "candidate_event_count": 37,
+    "goal": "desktop_to_web_lossless_migration"
+  },
+  "items": [
+    {
+      "event_id": "add_file_to_kb",
+      "domain": "knowledge_base",
+      "desktop_handler": "_add_file_to_kb",
+      "api": {
+        "path": "/api/gui/add_file_to_kb",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_add_file_to_kb",
+      "notes": ""
+    },
+    {
+      "event_id": "add_folder_to_kb",
+      "domain": "knowledge_base",
+      "desktop_handler": "_add_folder_to_kb",
+      "api": {
+        "path": "/api/gui/add_folder_to_kb",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_add_folder_to_kb",
+      "notes": ""
+    },
+    {
+      "event_id": "browse_workflow_multimodal_file",
+      "domain": "workflow",
+      "desktop_handler": "_browse_workflow_multimodal_file",
+      "api": {
+        "path": "/api/gui/browse_workflow_multimodal_file",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_browse_workflow_multimodal_file",
+      "notes": ""
+    },
+    {
+      "event_id": "create_new_session",
+      "domain": "chat",
+      "desktop_handler": "_create_new_session",
+      "api": {
+        "path": "/api/gui/create_new_session",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_create_new_session",
+      "notes": ""
+    },
+    {
+      "event_id": "delete_session",
+      "domain": "chat",
+      "desktop_handler": "_delete_session",
+      "api": {
+        "path": "/api/gui/delete_session",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_delete_session",
+      "notes": ""
+    },
+    {
+      "event_id": "load_session",
+      "domain": "chat",
+      "desktop_handler": "_load_session",
+      "api": {
+        "path": "/api/gui/load_session",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_load_session",
+      "notes": ""
+    },
+    {
+      "event_id": "on_msg_scrollbar",
+      "domain": "misc",
+      "desktop_handler": "_on_msg_scrollbar",
+      "api": {
+        "path": "/api/gui/on_msg_scrollbar",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_on_msg_scrollbar",
+      "notes": ""
+    },
+    {
+      "event_id": "open_rag_manager",
+      "domain": "knowledge_base",
+      "desktop_handler": "_open_rag_manager",
+      "api": {
+        "path": "/api/gui/open_rag_manager",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_open_rag_manager",
+      "notes": ""
+    },
+    {
+      "event_id": "open_settings",
+      "domain": "settings",
+      "desktop_handler": "_open_settings",
+      "api": {
+        "path": "/api/gui/open_settings",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_open_settings",
+      "notes": ""
+    },
+    {
+      "event_id": "rebuild_kb_index",
+      "domain": "knowledge_base",
+      "desktop_handler": "_rebuild_kb_index",
+      "api": {
+        "path": "/api/gui/rebuild_kb_index",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_rebuild_kb_index",
+      "notes": ""
+    },
+    {
+      "event_id": "rename_session",
+      "domain": "chat",
+      "desktop_handler": "_rename_session",
+      "api": {
+        "path": "/api/gui/rename_session",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_rename_session",
+      "notes": ""
+    },
+    {
+      "event_id": "scroll_to_bottom",
+      "domain": "misc",
+      "desktop_handler": "_scroll_to_bottom",
+      "api": {
+        "path": "/api/gui/scroll_to_bottom",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_scroll_to_bottom",
+      "notes": ""
+    },
+    {
+      "event_id": "send_message",
+      "domain": "chat",
+      "desktop_handler": "_send_message",
+      "api": {
+        "path": "/api/gui/send_message",
+        "method": "POST",
+        "sse_required": true
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_send_message",
+      "notes": ""
+    },
+    {
+      "event_id": "show_chat_page",
+      "domain": "chat",
+      "desktop_handler": "_show_chat_page",
+      "api": {
+        "path": "/api/gui/show_chat_page",
+        "method": "POST",
+        "sse_required": true
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_show_chat_page",
+      "notes": ""
+    },
+    {
+      "event_id": "show_multimodal_page",
+      "domain": "multimodal",
+      "desktop_handler": "_show_multimodal_page",
+      "api": {
+        "path": "/api/gui/show_multimodal_page",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_show_multimodal_page",
+      "notes": ""
+    },
+    {
+      "event_id": "show_orchestration_page",
+      "domain": "misc",
+      "desktop_handler": "_show_orchestration_page",
+      "api": {
+        "path": "/api/gui/show_orchestration_page",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_show_orchestration_page",
+      "notes": ""
+    },
+    {
+      "event_id": "show_settings_page",
+      "domain": "settings",
+      "desktop_handler": "_show_settings_page",
+      "api": {
+        "path": "/api/gui/show_settings_page",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_show_settings_page",
+      "notes": ""
+    },
+    {
+      "event_id": "show_text_context_menu",
+      "domain": "misc",
+      "desktop_handler": "_show_text_context_menu",
+      "api": {
+        "path": "/api/gui/show_text_context_menu",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_show_text_context_menu",
+      "notes": ""
+    },
+    {
+      "event_id": "show_video_page",
+      "domain": "video",
+      "desktop_handler": "_show_video_page",
+      "api": {
+        "path": "/api/gui/show_video_page",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_show_video_page",
+      "notes": ""
+    },
+    {
+      "event_id": "switch_chat_submenu",
+      "domain": "chat",
+      "desktop_handler": "_switch_chat_submenu",
+      "api": {
+        "path": "/api/gui/switch_chat_submenu",
+        "method": "POST",
+        "sse_required": true
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_switch_chat_submenu",
+      "notes": ""
+    },
+    {
+      "event_id": "update_jump_bottom_visibility",
+      "domain": "misc",
+      "desktop_handler": "_update_jump_bottom_visibility",
+      "api": {
+        "path": "/api/gui/update_jump_bottom_visibility",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_update_jump_bottom_visibility",
+      "notes": ""
+    },
+    {
+      "event_id": "upload_image",
+      "domain": "multimodal",
+      "desktop_handler": "_upload_image",
+      "api": {
+        "path": "/api/gui/upload_image",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_upload_image",
+      "notes": ""
+    },
+    {
+      "event_id": "batch_import",
+      "domain": "misc",
+      "desktop_handler": "batch_import",
+      "api": {
+        "path": "/api/gui/batch_import",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_batch_import",
+      "notes": ""
+    },
+    {
+      "event_id": "msg_canvas",
+      "domain": "misc",
+      "desktop_handler": "msg_canvas",
+      "api": {
+        "path": "/api/gui/msg_canvas",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_msg_canvas",
+      "notes": ""
+    },
+    {
+      "event_id": "open_ai_api_config_window",
+      "domain": "settings",
+      "desktop_handler": "open_ai_api_config_window",
+      "api": {
+        "path": "/api/gui/open_ai_api_config_window",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_open_ai_api_config_window",
+      "notes": ""
+    },
+    {
+      "event_id": "open_ai_config_window",
+      "domain": "settings",
+      "desktop_handler": "open_ai_config_window",
+      "api": {
+        "path": "/api/gui/open_ai_config_window",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_open_ai_config_window",
+      "notes": ""
+    },
+    {
+      "event_id": "open_task_node_center_window",
+      "domain": "workflow",
+      "desktop_handler": "open_task_node_center_window",
+      "api": {
+        "path": "/api/gui/open_task_node_center_window",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_open_task_node_center_window",
+      "notes": ""
+    },
+    {
+      "event_id": "open_thread_config_window",
+      "domain": "settings",
+      "desktop_handler": "open_thread_config_window",
+      "api": {
+        "path": "/api/gui/open_thread_config_window",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_open_thread_config_window",
+      "notes": ""
+    },
+    {
+      "event_id": "open_workflow_designer_window",
+      "domain": "workflow",
+      "desktop_handler": "open_workflow_designer_window",
+      "api": {
+        "path": "/api/gui/open_workflow_designer_window",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_open_workflow_designer_window",
+      "notes": ""
+    },
+    {
+      "event_id": "resume_selected_workflow_from_failed",
+      "domain": "workflow",
+      "desktop_handler": "resume_selected_workflow_from_failed",
+      "api": {
+        "path": "/api/gui/resume_selected_workflow_from_failed",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_resume_selected_workflow_from_failed",
+      "notes": ""
+    },
+    {
+      "event_id": "run_selected_workflow",
+      "domain": "workflow",
+      "desktop_handler": "run_selected_workflow",
+      "api": {
+        "path": "/api/gui/run_selected_workflow",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_run_selected_workflow",
+      "notes": ""
+    },
+    {
+      "event_id": "save_and_start_workflow_scheduler",
+      "domain": "workflow",
+      "desktop_handler": "save_and_start_workflow_scheduler",
+      "api": {
+        "path": "/api/gui/save_and_start_workflow_scheduler",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_save_and_start_workflow_scheduler",
+      "notes": ""
+    },
+    {
+      "event_id": "session_canvas",
+      "domain": "chat",
+      "desktop_handler": "session_canvas",
+      "api": {
+        "path": "/api/gui/session_canvas",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_session_canvas",
+      "notes": ""
+    },
+    {
+      "event_id": "show_history",
+      "domain": "chat",
+      "desktop_handler": "show_history",
+      "api": {
+        "path": "/api/gui/show_history",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_show_history",
+      "notes": ""
+    },
+    {
+      "event_id": "start",
+      "domain": "misc",
+      "desktop_handler": "start",
+      "api": {
+        "path": "/api/gui/start",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_start",
+      "notes": ""
+    },
+    {
+      "event_id": "stop_current_workflow_run",
+      "domain": "workflow",
+      "desktop_handler": "stop_current_workflow_run",
+      "api": {
+        "path": "/api/gui/stop_current_workflow_run",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_stop_current_workflow_run",
+      "notes": ""
+    },
+    {
+      "event_id": "stop_workflow_scheduler",
+      "domain": "workflow",
+      "desktop_handler": "stop_workflow_scheduler",
+      "api": {
+        "path": "/api/gui/stop_workflow_scheduler",
+        "method": "POST",
+        "sse_required": false
+      },
+      "schema": {
+        "request": {},
+        "response": {
+          "ok": "bool",
+          "data": "object",
+          "error": "string"
+        }
+      },
+      "status": "planned",
+      "test_case_id": "evt_stop_workflow_scheduler",
+      "notes": ""
+    }
+  ]
+}

@@ -13,6 +13,7 @@ from abc import ABC, abstractmethod
 from typing import List, Tuple, Dict, Any
 import numpy as np
 import logging
+import statistics
 
 logger = logging.getLogger(__name__)
 
@@ -155,13 +156,19 @@ class DynamicSemanticSplitter(TextSplitterStrategy):
                  overlap: int = 50,
                  similarity_threshold: float = 0.7,
                  min_chunk_size: int = 100,
-                 max_chunk_size: int = 1000):
+                 max_chunk_size: int = 1000,
+                 dynamic_max_chars: int = 800,
+                 lap_overlap_sentences: int = 1,
+                 valley_prominence_ratio: float = 0.85):
         self.embedding_model = embedding_model
         self.chunk_size = chunk_size
         self.overlap = overlap
         self.similarity_threshold = similarity_threshold
         self.min_chunk_size = min_chunk_size
         self.max_chunk_size = max_chunk_size
+        self.dynamic_max_chars = dynamic_max_chars
+        self.lap_overlap_sentences = max(0, int(lap_overlap_sentences))
+        self.valley_prominence_ratio = valley_prominence_ratio
         self.separators = ['\n\n', '\n', '。', '！', '？', '. ', '! ', '? ']
     
     @property
@@ -170,7 +177,107 @@ class DynamicSemanticSplitter(TextSplitterStrategy):
     
     @property
     def description(self) -> str:
-        return "根据语义相似度动态调整窗口，保持上下文连贯性"
+        return "句边界+语义极小值切分，超长块动态二次切分并句级lap重叠"
+
+    def _compute_similarity_profile(self, sentences: List[Tuple[str, int, int]], embeddings: np.ndarray) -> Dict[str, Any]:
+        """计算句间相似度曲线，并给出局部极小值与动态阈值。"""
+        similarities: List[float] = []
+        for i in range(len(sentences) - 1):
+            similarities.append(self._cosine_similarity(embeddings[i], embeddings[i + 1]))
+
+        if not similarities:
+            return {
+                "similarities": [],
+                "valleys": set(),
+                "mean_diff": 0.0,
+                "adaptive_prominence": 0.0
+            }
+
+        diffs = [abs(similarities[i] - similarities[i - 1]) for i in range(1, len(similarities))]
+        mean_diff = float(statistics.mean(diffs)) if diffs else 0.0
+        adaptive_prominence = max(0.02, mean_diff * self.valley_prominence_ratio)
+
+        valleys = set()
+        for j in range(len(similarities)):
+            curr = similarities[j]
+            left = similarities[j - 1] if j - 1 >= 0 else None
+            right = similarities[j + 1] if j + 1 < len(similarities) else None
+
+            if left is None and right is not None:
+                if curr + adaptive_prominence < right:
+                    valleys.add(j + 1)
+            elif right is None and left is not None:
+                if curr + adaptive_prominence < left:
+                    valleys.add(j + 1)
+            elif left is not None and right is not None:
+                if curr + adaptive_prominence < min(left, right):
+                    valleys.add(j + 1)
+
+        return {
+            "similarities": similarities,
+            "valleys": valleys,
+            "mean_diff": mean_diff,
+            "adaptive_prominence": adaptive_prominence
+        }
+
+    def _build_chunk_with_lap(
+        self,
+        text: str,
+        sentences: List[Tuple[str, int, int]],
+        start_idx: int,
+        end_idx: int
+    ) -> Tuple[str, int, int]:
+        """按句子索引构建块，并在前后做句级lap重叠。"""
+        lap = self.lap_overlap_sentences
+        lap_start = max(0, start_idx - lap)
+        lap_end = min(len(sentences) - 1, end_idx + lap)
+
+        start_pos = sentences[lap_start][1]
+        end_pos = sentences[lap_end][2]
+        chunk_text = text[start_pos:end_pos].strip()
+        return chunk_text, start_pos, end_pos
+
+    def _split_oversized_chunk(
+        self,
+        text: str,
+        sentences: List[Tuple[str, int, int]],
+        start_idx: int,
+        end_idx: int,
+        profile: Dict[str, Any]
+    ) -> List[Tuple[int, int]]:
+        """对超过dynamic_max_chars的块做二次动态分割，优先使用子区间语义极小值。"""
+        ranges: List[Tuple[int, int]] = []
+        cursor = start_idx
+        valleys: set = profile.get("valleys", set())
+
+        while cursor <= end_idx:
+            # 先尝试按dynamic_max_chars推进
+            char_count = 0
+            forced_end = cursor
+            while forced_end <= end_idx:
+                char_count += len(sentences[forced_end][0])
+                if char_count > self.dynamic_max_chars:
+                    break
+                forced_end += 1
+
+            if forced_end > end_idx:
+                ranges.append((cursor, end_idx))
+                break
+
+            # forced_end 当前是超界句子，下一个切分点应在 [cursor+1, forced_end]
+            candidate_cuts = [
+                idx for idx in valleys
+                if cursor < idx <= min(end_idx, forced_end)
+            ]
+            if candidate_cuts:
+                cut = candidate_cuts[-1]  # 选择靠后的语义谷，减少碎片
+                ranges.append((cursor, cut - 1))
+                cursor = cut
+            else:
+                ranges.append((cursor, forced_end - 1))
+                cursor = forced_end
+
+        return ranges
     
     def _split_into_sentences(self, text: str) -> List[Tuple[str, int, int]]:
         """将文本分割为句子"""
@@ -224,7 +331,8 @@ class DynamicSemanticSplitter(TextSplitterStrategy):
             fallback = SentenceBoundarySplitter(self.chunk_size, self.overlap)
             return fallback.split(text, **kwargs)
         
-        chunk_size = kwargs.get('chunk_size', self.chunk_size)
+        min_chunk_size = kwargs.get('min_chunk_size', self.min_chunk_size)
+        dynamic_max_chars = kwargs.get('dynamic_max_chars', self.dynamic_max_chars)
         
         logger.info(f"【动态语义分割】文本长度: {len(text)}")
         
@@ -249,81 +357,85 @@ class DynamicSemanticSplitter(TextSplitterStrategy):
             fallback = SentenceBoundarySplitter(self.chunk_size, self.overlap)
             return fallback.split(text, **kwargs)
         
-        # 3. 计算相邻句子的语义相似度
-        similarities = []
-        for i in range(len(sentences) - 1):
-            sim = self._cosine_similarity(embeddings[i], embeddings[i + 1])
-            similarities.append(sim)
-            logger.debug(f"  句子{i}与{i+1}相似度: {sim:.3f}")
-        
-        # 4. 检测语义边界（相似度极小值）
-        # 同时考虑：语义边界 和 大小限制
-        chunks = []
-        chunk_start_idx = 0  # 当前块的起始句子索引
-        current_chunk_char_count = len(sentences[0][0])  # 当前块的字符数
-        
-        for i in range(1, len(sentences)):
-            sentence_len = len(sentences[i][0])
-            
-            # 判断是否需要切断
-            should_cut = False
-            cut_reason = ""
-            
-            # 条件1: 语义边界检测（相似度极小值）
-            if i < len(similarities):
-                # 检测局部极小值（比前后都小）
-                is_local_min = False
-                if i == 1:
-                    # 第一个相似度，只需要比后一个小
-                    is_local_min = similarities[0] < similarities[1] * 0.9
-                elif i == len(similarities):
-                    # 最后一个，只需要比前一个小
-                    is_local_min = similarities[-1] < similarities[-2] * 0.9
-                else:
-                    # 中间的，比前后都小
-                    is_local_min = (similarities[i-1] < similarities[i-2] * 0.9 and 
-                                   similarities[i-1] < similarities[i] * 0.9)
-                
-                if is_local_min and current_chunk_char_count >= self.min_chunk_size:
-                    should_cut = True
-                    cut_reason = f"语义边界(相似度{similarities[i-1]:.3f})"
-            
-            # 条件2: 大小限制 - 如果超过chunk_size，在下一句号处切断
-            if current_chunk_char_count + sentence_len > chunk_size:
-                should_cut = True
-                cut_reason = f"大小限制({current_chunk_char_count}+{sentence_len}>{chunk_size})"
-            
-            if should_cut:
-                # 保存当前块
-                start_pos = sentences[chunk_start_idx][1]
-                end_pos = sentences[i-1][2] if i > 0 else sentences[0][2]
-                chunk_text = text[start_pos:end_pos].strip()
-                
-                if chunk_text:
-                    chunks.append((chunk_text, start_pos, end_pos))
-                    logger.info(f"  创建块 {len(chunks)}: 句子{chunk_start_idx}-{i-1}, "
-                               f"长度{len(chunk_text)}, 原因: {cut_reason}")
-                
-                # 开始新块
-                chunk_start_idx = i
-                current_chunk_char_count = sentence_len
+        # 3. 相似度曲线 + 极小值检测（带平均差动态精度控制）
+        profile = self._compute_similarity_profile(sentences, embeddings)
+        similarities = profile["similarities"]
+        valleys = profile["valleys"]
+        logger.info(
+            "【动态语义分割】相似度样本=%s, mean_diff=%.4f, adaptive_prominence=%.4f, valley_count=%d",
+            [round(v, 4) for v in similarities[:10]],
+            profile["mean_diff"],
+            profile["adaptive_prominence"],
+            len(valleys)
+        )
+
+        # 4. 先按语义极小值粗分
+        coarse_ranges: List[Tuple[int, int]] = []
+        start_idx = 0
+        for cut_idx in sorted(valleys):
+            if cut_idx <= start_idx:
+                continue
+            char_count = sum(len(sentences[k][0]) for k in range(start_idx, cut_idx))
+            if char_count >= min_chunk_size:
+                coarse_ranges.append((start_idx, cut_idx - 1))
+                start_idx = cut_idx
+        if start_idx <= len(sentences) - 1:
+            coarse_ranges.append((start_idx, len(sentences) - 1))
+
+        # 5. 对超过dynamic_max_chars的块二次分割（>800）
+        final_ranges: List[Tuple[int, int]] = []
+        for s_idx, e_idx in coarse_ranges:
+            char_count = sum(len(sentences[k][0]) for k in range(s_idx, e_idx + 1))
+            if char_count > dynamic_max_chars:
+                final_ranges.extend(self._split_oversized_chunk(text, sentences, s_idx, e_idx, profile))
             else:
-                # 继续当前块
-                current_chunk_char_count += sentence_len
-        
-        # 处理最后一个块
-        if chunk_start_idx < len(sentences):
-            start_pos = sentences[chunk_start_idx][1]
-            end_pos = sentences[-1][2]
-            chunk_text = text[start_pos:end_pos].strip()
-            
+                final_ranges.append((s_idx, e_idx))
+
+        # 6. 组装最终块：前后一句lap重叠
+        chunks = []
+        for idx, (s_idx, e_idx) in enumerate(final_ranges, start=1):
+            chunk_text, start_pos, end_pos = self._build_chunk_with_lap(text, sentences, s_idx, e_idx)
             if chunk_text:
                 chunks.append((chunk_text, start_pos, end_pos))
-                logger.info(f"  创建块 {len(chunks)}: 句子{chunk_start_idx}-{len(sentences)-1}, "
-                           f"长度{len(chunk_text)} (最后块)")
-        
+                logger.info(
+                    "  创建块 %d: 句子%d-%d, 长度%d, lap=%d句",
+                    idx, s_idx, e_idx, len(chunk_text), self.lap_overlap_sentences
+                )
+
         logger.info(f"【动态语义分割完成】共 {len(chunks)} 个块")
         return chunks
+
+    def analyze_text(self, text: str, **kwargs) -> Dict[str, Any]:
+        """输出句间语义相似度与切分统计，便于调参与展示。"""
+        if not text.strip():
+            return {"error": "empty_text"}
+        if not self.embedding_model:
+            return {"error": "missing_embedding_model"}
+
+        sentences = self._split_into_sentences(text)
+        if len(sentences) <= 1:
+            return {"sentence_count": len(sentences), "similarities": [], "valley_indices": [], "chunks": []}
+
+        sentence_texts = [s[0] for s in sentences]
+        embeddings = self.embedding_model.encode(
+            sentence_texts,
+            batch_size=32,
+            show_progress_bar=False,
+            convert_to_numpy=True
+        )
+        profile = self._compute_similarity_profile(sentences, embeddings)
+        chunks = self.split(text, **kwargs)
+        return {
+            "sentence_count": len(sentences),
+            "similarities": profile["similarities"],
+            "valley_indices": sorted(list(profile["valleys"])),
+            "mean_diff": profile["mean_diff"],
+            "adaptive_prominence": profile["adaptive_prominence"],
+            "chunks": [
+                {"index": i + 1, "start": c[1], "end": c[2], "length": len(c[0])}
+                for i, c in enumerate(chunks)
+            ]
+        }
 
 
 class TextSplitterFactory:

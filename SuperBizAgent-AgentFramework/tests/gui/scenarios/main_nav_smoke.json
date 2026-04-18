@@ -1,0 +1,55 @@
+{
+  "name": "main_nav_smoke",
+  "description": "验证主导航关键入口可切换",
+  "steps": [
+    {
+      "action": "launch_app",
+      "command": "py -3 video_gui.py",
+      "cwd": "F:\\java\\AIOPS\\SuperBizAgent-release-2026-01-02\\demo_wendanghua\\SuperBizAgent-AgentFramework\\src\\agent",
+      "wait_sec": 5
+    },
+    {
+      "action": "attach_main_window",
+      "title_re": ".*多模态文档化助手.*",
+      "timeout_sec": 20
+    },
+    {
+      "action": "click_text",
+      "text_re": "任务编排",
+      "timeout_sec": 10,
+      "auto_screenshot": true
+    },
+    {
+      "action": "assert_text",
+      "text_re": "任务编排.*",
+      "timeout_sec": 10
+    },
+    {
+      "action": "click_text",
+      "text_re": "设置",
+      "timeout_sec": 10,
+      "auto_screenshot": true
+    },
+    {
+      "action": "assert_text",
+      "text_re": "设置中心.*",
+      "timeout_sec": 10
+    },
+    {
+      "action": "click_text",
+      "text_re": "OPS运维",
+      "timeout_sec": 10,
+      "auto_screenshot": true
+    },
+    {
+      "action": "assert_text",
+      "text_re": "OPS运维.*",
+      "timeout_sec": 10,
+      "auto_screenshot": true
+    },
+    {
+      "action": "close_app"
+    }
+  ]
+}
+

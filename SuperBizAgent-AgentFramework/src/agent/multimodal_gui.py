@@ -40,6 +40,7 @@ except ImportError:
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(BASE_DIR, "output")
+CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
 
 # 文件类型配置
 FILE_TYPE_CONFIG = {
@@ -110,6 +111,29 @@ IOS_SUCCESS = {
 }
 
 
+def _load_runtime_config() -> dict:
+    try:
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+    except Exception:
+        pass
+    return {}
+
+
+def _save_runtime_config_patch(patch: dict) -> bool:
+    try:
+        cfg = _load_runtime_config()
+        cfg.update(patch or {})
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception:
+        return False
+
+
 def get_file_type(file_path: str) -> tuple:
     """获取文件类型信息"""
     ext = Path(file_path).suffix.lower()
@@ -124,6 +148,7 @@ class MultimodalProcessingPage(tk.Frame):
 
     def __init__(self, parent, **kwargs):
         super().__init__(parent, bg="#f5f5f5", **kwargs)
+        runtime_cfg = _load_runtime_config()
         
         # 优先使用MinerU处理器
         if MINERU_AVAILABLE:
@@ -142,7 +167,8 @@ class MultimodalProcessingPage(tk.Frame):
         self.selected_files = []
         self.edit_mode = False
         self.processing = False
-        self.output_dir_var = tk.StringVar(value=OUTPUT_DIR)
+        self.output_dir_var = tk.StringVar(value=(runtime_cfg.get("multimodal_output_dir") or OUTPUT_DIR))
+        self.output_format_var = tk.StringVar(value=(runtime_cfg.get("multimodal_output_format") or "md"))
         self._log_queue = queue.Queue()
         self._log_after_id = None
         self._warmup_running = False
@@ -434,6 +460,22 @@ class MultimodalProcessingPage(tk.Frame):
             text="打开目录",
             command=self._open_output_dir,
         ).pack(side=tk.LEFT, padx=(0, 10), pady=8)
+        tk.Label(
+            export_frame,
+            text="导出类型：",
+            bg="#ffffff",
+            fg="#333333",
+            font=("微软雅黑", 10),
+        ).pack(side=tk.LEFT, padx=(8, 6), pady=8)
+        fmt_combo = ttk.Combobox(
+            export_frame,
+            textvariable=self.output_format_var,
+            state="readonly",
+            values=["md", "txt"],
+            width=6,
+        )
+        fmt_combo.pack(side=tk.LEFT, padx=(0, 10), pady=8)
+        fmt_combo.bind("<<ComboboxSelected>>", lambda _e: self._persist_output_settings())
         
         # 进度区域
         self.progress_frame = tk.LabelFrame(
@@ -770,11 +812,15 @@ class MultimodalProcessingPage(tk.Frame):
             # 创建输出目录
             out_dir = self.output_dir_var.get().strip() or OUTPUT_DIR
             os.makedirs(out_dir, exist_ok=True)
+            self._persist_output_settings()
             
-            # 生成输出文件名（多模态最终沉淀为 txt）
+            # 生成输出文件名（可选 txt/md，默认 md）
             base_name = Path(file_name).stem
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_file = os.path.join(out_dir, f"{base_name}_{timestamp}.txt")
+            output_format = (self.output_format_var.get() or "md").strip().lower()
+            if output_format not in ("md", "txt"):
+                output_format = "md"
+            output_file = os.path.join(out_dir, f"{base_name}_{timestamp}.{output_format}")
             
             # 构建纯文本输出
             header = [
@@ -784,7 +830,19 @@ class MultimodalProcessingPage(tk.Frame):
                 f"处理耗时: {result.processing_time:.2f} 秒",
                 ""
             ]
-            content = "\n".join(header) + (result.content.text or "")
+            raw_text = (result.content.text or "")
+            if output_format == "md":
+                content = (
+                    f"# 多模态解析结果 - {base_name}\n\n"
+                    f"## 基本信息\n"
+                    f"- 文件名: {file_name}\n"
+                    f"- 文件类型: {result.doc_type.value}\n"
+                    f"- 处理时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    f"- 处理耗时: {result.processing_time:.2f} 秒\n\n"
+                    f"## 原始文字内容\n\n{raw_text}\n"
+                )
+            else:
+                content = "\n".join(header) + raw_text
             
             # 保存文件
             with open(output_file, 'w', encoding='utf-8') as f:
@@ -799,6 +857,7 @@ class MultimodalProcessingPage(tk.Frame):
         p = filedialog.askdirectory(title="选择导出目录")
         if p:
             self.output_dir_var.set(p)
+            self._persist_output_settings()
             self._log(f"📁 已设置默认导出目录: {p}")
 
     def _open_output_dir(self):
@@ -808,6 +867,18 @@ class MultimodalProcessingPage(tk.Frame):
             os.startfile(p)
         except Exception as e:
             self._log(f"❌ 打开导出目录失败: {e}")
+
+    def _persist_output_settings(self):
+        fmt = (self.output_format_var.get() or "md").strip().lower()
+        if fmt not in ("md", "txt"):
+            fmt = "md"
+            self.output_format_var.set(fmt)
+        _save_runtime_config_patch(
+            {
+                "multimodal_output_dir": (self.output_dir_var.get() or OUTPUT_DIR).strip(),
+                "multimodal_output_format": fmt,
+            }
+        )
 
     def _process_with_best_available(self, file_path: str, file_type: str):
         """

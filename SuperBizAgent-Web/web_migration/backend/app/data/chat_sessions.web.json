@@ -1,0 +1,23 @@
+{
+  "sessions": [
+    {
+      "id": "5e87a9f3-0056-4c79-b982-48283d7a159b",
+      "title": "新对话",
+      "messages": [],
+      "created_at": 1776238049
+    },
+    {
+      "id": "8a9f9a6c-1b86-458e-8a14-758ed0287eab",
+      "title": "t1",
+      "messages": [
+        {
+          "role": "user",
+          "content": "hello",
+          "timestamp": 1776241014
+        }
+      ],
+      "created_at": 1776241014
+    }
+  ],
+  "current_session_id": "5e87a9f3-0056-4c79-b982-48283d7a159b"
+}

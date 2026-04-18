@@ -1,0 +1,12 @@
+{
+  "strategy": "dynamic_semantic",
+  "params": {
+    "chunk_size": 500,
+    "overlap": 50,
+    "min_chunk_size": 100,
+    "dynamic_max_chars": 800,
+    "lap_overlap_sentences": 1,
+    "valley_prominence_ratio": 0.85
+  },
+  "updated_at": "2026-04-18T02:13:11.907340"
+}

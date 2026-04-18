@@ -91,6 +91,36 @@ class DatabaseManager:
         except ImportError:
             logger.error("未安装pymysql，请运行: pip install pymysql")
             raise
+
+        # 启动即兜底：自动建库 + 建表，避免 Unknown database / 缺表刷错
+        self._ensure_database_and_tables()
+
+    def _ensure_database_and_tables(self):
+        """确保数据库与核心表存在（失败仅记录，不中断启动）。"""
+        try:
+            admin_conn = self.pymysql.connect(
+                host=self.host,
+                port=self.port,
+                user=self.user,
+                password=self.password,
+                charset='utf8mb4',
+                cursorclass=self.pymysql.cursors.DictCursor
+            )
+            try:
+                with admin_conn.cursor() as cursor:
+                    cursor.execute(
+                        f"CREATE DATABASE IF NOT EXISTS `{self.database}` "
+                        "DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+                    )
+                admin_conn.commit()
+            finally:
+                admin_conn.close()
+
+            # 建表（使用当前 database 连接）
+            self.init_tables()
+            logger.info(f"数据库就绪: {self.database}")
+        except Exception as e:
+            logger.warning(f"数据库自动初始化失败（将按运行时查询继续）: {e}")
     
     def _get_connection(self):
         """获取数据库连接"""
@@ -440,8 +470,8 @@ class DatabaseManager:
 _db_manager: Optional[DatabaseManager] = None
 
 
-def get_db_manager(host='localhost', port=3306, user='root',
-                   password='', database='rag_kb') -> DatabaseManager:
+def get_db_manager(host=None, port=None, user=None,
+                   password=None, database=None) -> DatabaseManager:
     """获取数据库管理器实例"""
     global _db_manager
     if _db_manager is None:

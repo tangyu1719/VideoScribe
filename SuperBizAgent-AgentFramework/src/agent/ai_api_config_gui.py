@@ -367,6 +367,16 @@ class AIAPIConfigWindow:
         self.backup_list_frame = tk.Frame(backup_section, bg="#ffffff")
         self.backup_list_frame.pack(fill=tk.X, pady=10)
         
+        # 显示数量（必须先创建，避免加载备选时触发 _update_count_label 找不到控件）
+        self.count_label = tk.Label(
+            backup_section,
+            text=f"当前备选配置数量: {len(self.backup_frames)}",
+            font=("微软雅黑", 9),
+            fg="#666",
+            bg="#ffffff",
+        )
+        self.count_label.pack(anchor=tk.W, pady=(5, 0))
+
         # 加载现有备选配置
         self._load_backup_configs()
         
@@ -384,15 +394,8 @@ class AIAPIConfigWindow:
         )
         add_btn.pack(anchor=tk.W, pady=(10, 0))
         
-        # 显示数量
-        self.count_label = tk.Label(
-            backup_section,
-            text=f"当前备选配置数量: {len(self.backup_frames)}",
-            font=("微软雅黑", 9),
-            fg="#666",
-            bg="#ffffff"
-        )
-        self.count_label.pack(anchor=tk.W, pady=(5, 0))
+        # 初次加载后刷新一次数量
+        self._update_count_label()
     
     def _load_backup_configs(self):
         """加载备选配置到界面"""
@@ -491,7 +494,12 @@ class AIAPIConfigWindow:
     
     def _update_count_label(self):
         """更新数量标签"""
-        self.count_label.config(text=f"当前备选配置数量: {len(self.backup_frames)}")
+        if not hasattr(self, "count_label") or self.count_label is None:
+            return
+        try:
+            self.count_label.config(text=f"当前备选配置数量: {len(self.backup_frames)}")
+        except tk.TclError:
+            pass
     
     def _save_config(self):
         """保存配置"""

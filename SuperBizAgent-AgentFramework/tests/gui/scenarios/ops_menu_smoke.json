@@ -1,0 +1,50 @@
+{
+  "name": "ops_menu_smoke",
+  "description": "验证 OPS运维 一级菜单及二级页面可见",
+  "steps": [
+    {
+      "action": "close_windows_by_title",
+      "title_re": ".*多模态文档化助手.*",
+      "wait_sec": 1
+    },
+    {
+      "action": "launch_app",
+      "command": "py -3 video_gui.py",
+      "cwd": "F:\\java\\AIOPS\\SuperBizAgent-release-2026-01-02\\demo_wendanghua\\SuperBizAgent-AgentFramework\\src\\agent",
+      "wait_sec": 5
+    },
+    {
+      "action": "attach_main_window",
+      "title_re": ".*多模态文档化助手.*",
+      "timeout_sec": 20
+    },
+    {
+      "action": "click_text",
+      "text_re": "OPS运维",
+      "timeout_sec": 10,
+      "auto_screenshot": true
+    },
+    {
+      "action": "assert_text",
+      "text_re": "运维AGENT.*",
+      "timeout_sec": 10,
+      "auto_screenshot": true
+    },
+    {
+      "action": "click_text",
+      "text_re": "OPS数据可视化",
+      "timeout_sec": 10,
+      "auto_screenshot": true
+    },
+    {
+      "action": "assert_text",
+      "text_re": "OPS数据可视化.*",
+      "timeout_sec": 10,
+      "auto_screenshot": true
+    },
+    {
+      "action": "close_app"
+    }
+  ]
+}
+

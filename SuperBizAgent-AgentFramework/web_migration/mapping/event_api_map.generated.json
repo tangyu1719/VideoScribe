@@ -1,0 +1,426 @@
+{
+  "source_file": "..\\..\\src\\agent\\video_gui.py",
+  "summary": {
+    "method_count": 250,
+    "command_handler_count": 25,
+    "bind_handler_count": 14,
+    "candidate_event_count": 37
+  },
+  "handlers": {
+    "command_handlers": [
+      "_add_file_to_kb",
+      "_add_folder_to_kb",
+      "_browse_workflow_multimodal_file",
+      "_on_msg_scrollbar",
+      "_open_rag_manager",
+      "_rebuild_kb_index",
+      "_show_chat_page",
+      "_show_multimodal_page",
+      "_show_orchestration_page",
+      "_show_settings_page",
+      "_show_video_page",
+      "batch_import",
+      "open_ai_api_config_window",
+      "open_ai_config_window",
+      "open_task_node_center_window",
+      "open_thread_config_window",
+      "open_workflow_designer_window",
+      "resume_selected_workflow_from_failed",
+      "run_selected_workflow",
+      "save_and_start_workflow_scheduler",
+      "session_canvas",
+      "show_history",
+      "start",
+      "stop_current_workflow_run",
+      "stop_workflow_scheduler"
+    ],
+    "bind_handlers": [
+      "_create_new_session",
+      "_delete_session",
+      "_load_session",
+      "_open_rag_manager",
+      "_open_settings",
+      "_rename_session",
+      "_scroll_to_bottom",
+      "_send_message",
+      "_show_text_context_menu",
+      "_switch_chat_submenu",
+      "_update_jump_bottom_visibility",
+      "_upload_image",
+      "msg_canvas",
+      "session_canvas"
+    ]
+  },
+  "candidates": [
+    {
+      "event_id": "add_file_to_kb",
+      "desktop_handler": "_add_file_to_kb",
+      "api_path": "/api/gui/add_file_to_kb",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "add_folder_to_kb",
+      "desktop_handler": "_add_folder_to_kb",
+      "api_path": "/api/gui/add_folder_to_kb",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "browse_workflow_multimodal_file",
+      "desktop_handler": "_browse_workflow_multimodal_file",
+      "api_path": "/api/gui/browse_workflow_multimodal_file",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "create_new_session",
+      "desktop_handler": "_create_new_session",
+      "api_path": "/api/gui/create_new_session",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "delete_session",
+      "desktop_handler": "_delete_session",
+      "api_path": "/api/gui/delete_session",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "load_session",
+      "desktop_handler": "_load_session",
+      "api_path": "/api/gui/load_session",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "on_msg_scrollbar",
+      "desktop_handler": "_on_msg_scrollbar",
+      "api_path": "/api/gui/on_msg_scrollbar",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "open_rag_manager",
+      "desktop_handler": "_open_rag_manager",
+      "api_path": "/api/gui/open_rag_manager",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "open_settings",
+      "desktop_handler": "_open_settings",
+      "api_path": "/api/gui/open_settings",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "rebuild_kb_index",
+      "desktop_handler": "_rebuild_kb_index",
+      "api_path": "/api/gui/rebuild_kb_index",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "rename_session",
+      "desktop_handler": "_rename_session",
+      "api_path": "/api/gui/rename_session",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "scroll_to_bottom",
+      "desktop_handler": "_scroll_to_bottom",
+      "api_path": "/api/gui/scroll_to_bottom",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "send_message",
+      "desktop_handler": "_send_message",
+      "api_path": "/api/gui/send_message",
+      "method": "POST",
+      "sse_required": true,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "show_chat_page",
+      "desktop_handler": "_show_chat_page",
+      "api_path": "/api/gui/show_chat_page",
+      "method": "POST",
+      "sse_required": true,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "show_multimodal_page",
+      "desktop_handler": "_show_multimodal_page",
+      "api_path": "/api/gui/show_multimodal_page",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "show_orchestration_page",
+      "desktop_handler": "_show_orchestration_page",
+      "api_path": "/api/gui/show_orchestration_page",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "show_settings_page",
+      "desktop_handler": "_show_settings_page",
+      "api_path": "/api/gui/show_settings_page",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "show_text_context_menu",
+      "desktop_handler": "_show_text_context_menu",
+      "api_path": "/api/gui/show_text_context_menu",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "show_video_page",
+      "desktop_handler": "_show_video_page",
+      "api_path": "/api/gui/show_video_page",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "switch_chat_submenu",
+      "desktop_handler": "_switch_chat_submenu",
+      "api_path": "/api/gui/switch_chat_submenu",
+      "method": "POST",
+      "sse_required": true,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "update_jump_bottom_visibility",
+      "desktop_handler": "_update_jump_bottom_visibility",
+      "api_path": "/api/gui/update_jump_bottom_visibility",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "upload_image",
+      "desktop_handler": "_upload_image",
+      "api_path": "/api/gui/upload_image",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "batch_import",
+      "desktop_handler": "batch_import",
+      "api_path": "/api/gui/batch_import",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "msg_canvas",
+      "desktop_handler": "msg_canvas",
+      "api_path": "/api/gui/msg_canvas",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": false,
+      "note": ""
+    },
+    {
+      "event_id": "open_ai_api_config_window",
+      "desktop_handler": "open_ai_api_config_window",
+      "api_path": "/api/gui/open_ai_api_config_window",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "open_ai_config_window",
+      "desktop_handler": "open_ai_config_window",
+      "api_path": "/api/gui/open_ai_config_window",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "open_task_node_center_window",
+      "desktop_handler": "open_task_node_center_window",
+      "api_path": "/api/gui/open_task_node_center_window",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "open_thread_config_window",
+      "desktop_handler": "open_thread_config_window",
+      "api_path": "/api/gui/open_thread_config_window",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "open_workflow_designer_window",
+      "desktop_handler": "open_workflow_designer_window",
+      "api_path": "/api/gui/open_workflow_designer_window",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "resume_selected_workflow_from_failed",
+      "desktop_handler": "resume_selected_workflow_from_failed",
+      "api_path": "/api/gui/resume_selected_workflow_from_failed",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "run_selected_workflow",
+      "desktop_handler": "run_selected_workflow",
+      "api_path": "/api/gui/run_selected_workflow",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "save_and_start_workflow_scheduler",
+      "desktop_handler": "save_and_start_workflow_scheduler",
+      "api_path": "/api/gui/save_and_start_workflow_scheduler",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "session_canvas",
+      "desktop_handler": "session_canvas",
+      "api_path": "/api/gui/session_canvas",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": false,
+      "note": ""
+    },
+    {
+      "event_id": "show_history",
+      "desktop_handler": "show_history",
+      "api_path": "/api/gui/show_history",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "start",
+      "desktop_handler": "start",
+      "api_path": "/api/gui/start",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "stop_current_workflow_run",
+      "desktop_handler": "stop_current_workflow_run",
+      "api_path": "/api/gui/stop_current_workflow_run",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    },
+    {
+      "event_id": "stop_workflow_scheduler",
+      "desktop_handler": "stop_workflow_scheduler",
+      "api_path": "/api/gui/stop_workflow_scheduler",
+      "method": "POST",
+      "sse_required": false,
+      "implemented": false,
+      "in_source_methods": true,
+      "note": ""
+    }
+  ]
+}

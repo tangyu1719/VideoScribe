@@ -1,0 +1,41 @@
+{
+  "scenario": "F:\\java\\AIOPS\\SuperBizAgent-release-2026-01-02\\demo_wendanghua\\SuperBizAgent-AgentFramework\\tests\\gui\\scenarios\\ops_menu_smoke.json",
+  "started_at": "2026-04-18T17:50:12.378293",
+  "finished_at": "2026-04-18T17:52:07.393702",
+  "success": false,
+  "artifacts_dir": "F:\\java\\AIOPS\\SuperBizAgent-release-2026-01-02\\demo_wendanghua\\SuperBizAgent-AgentFramework\\tests\\gui\\artifacts\\latest",
+  "steps": [
+    {
+      "index": 1,
+      "action": "close_windows_by_title",
+      "status": "passed",
+      "elapsed_ms": 4679,
+      "detail": "",
+      "screenshot": ""
+    },
+    {
+      "index": 2,
+      "action": "launch_app",
+      "status": "passed",
+      "elapsed_ms": 5055,
+      "detail": "",
+      "screenshot": ""
+    },
+    {
+      "index": 3,
+      "action": "attach_main_window",
+      "status": "passed",
+      "elapsed_ms": 91243,
+      "detail": "",
+      "screenshot": ""
+    },
+    {
+      "index": 4,
+      "action": "click_text",
+      "status": "failed",
+      "elapsed_ms": 12437,
+      "detail": "点击失败，未找到控件文本: OPS运维",
+      "screenshot": "F:\\java\\AIOPS\\SuperBizAgent-release-2026-01-02\\demo_wendanghua\\SuperBizAgent-AgentFramework\\tests\\gui\\artifacts\\latest\\20260418-175207-step4-click_text.png"
+    }
+  ]
+}

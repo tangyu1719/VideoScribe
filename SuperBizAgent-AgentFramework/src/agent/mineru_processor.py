@@ -166,18 +166,26 @@ class MinerUProcessor:
                     test_pdf = os.path.join(td, "warmup.pdf")
                     c = canvas.Canvas(test_pdf, pagesize=A4)
                     c.setFont("Helvetica", 12)
-                    c.drawString(72, 780, "MINERU_WARMUP_SENTINEL")
+                    # 预热样本使用更接近真实输入的多行中英混排文本，减少“样本为空”概率
+                    c.drawString(72, 790, "MinerU Warmup Document")
+                    c.drawString(72, 770, "这是一段用于模型预热的中文文本，包含数字 12345。")
+                    c.drawString(72, 750, "Warmup checks parser bootstrap only, not extraction quality.")
                     c.showPage()
                     c.save()
 
-                    result = self.process_pdf(test_pdf)
+                    result = self.process_pdf(test_pdf, is_warmup=True)
 
                 # 只要预热流程已跑完一次就标记完成，避免重复首启预热拖慢启动。
                 # 若需要强制重跑，调用 warmup(force=True)。
                 if result.success:
                     self._warmed_up = True
                     MinerUProcessor._global_warmed_up = True
-                    MinerUProcessor._global_warmup_method = (result.metadata or {}).get("method", "warmup_cached")
+                    method = (result.metadata or {}).get("method", "warmup_cached")
+                    MinerUProcessor._global_warmup_method = method
+                    if method == "fallback":
+                        logger.info(
+                            "[MinerU] 预热已完成（warmup 使用备用解析）；正式 PDF 仍会优先尝试 mineru_pipeline"
+                        )
                 return result
             except Exception as e:
                 return MinerUResult(success=False, error=f"预热异常: {e}")
@@ -217,7 +225,7 @@ class MinerUProcessor:
             logger.warning(f"[MinerU] 检测失败，将使用备用处理方案: {e}")
             return False
     
-    def process_pdf(self, pdf_path: str, method: str = "auto") -> MinerUResult:
+    def process_pdf(self, pdf_path: str, method: str = "auto", is_warmup: bool = False) -> MinerUResult:
         """
         处理PDF文件
         
@@ -317,7 +325,15 @@ class MinerUProcessor:
                     )
                 raise RuntimeError("mineru 输出为空")
             except Exception as e:
-                logger.warning(f"[MinerU] 本地 mineru 解析失败，将回退备用方案（不阻塞投入使用）: {e}")
+                # 预热样本（warmup.pdf）为空是常见情况，不应误导为“功能失败”。
+                # 真实业务文件仍保持 warning 级别，便于排障。
+                if is_warmup and ("输出为空" in str(e) or "empty" in str(e).lower()):
+                    logger.info(
+                        "[MinerU] 预热样本输出为空（仅预热样本），已回退备用解析完成预热；"
+                        "正式处理仍会先走 mineru_pipeline"
+                    )
+                else:
+                    logger.warning(f"[MinerU] 本地 mineru 解析失败，将回退备用方案（不阻塞投入使用）: {e}")
                 return self._process_pdf_fallback(pdf_path)
 
             # （保留）若未来环境装了 magic_pdf，可在这里补充回退分支；

@@ -1388,7 +1388,18 @@ class RAGManagerGUI:
                 try:
                     from kb_manager_fast import get_fast_knowledge_base
                     kb = get_fast_knowledge_base()
-                    kb.set_text_splitter_strategy(selected_strategy)
+                    if selected_strategy == "dynamic_semantic":
+                        kb.set_text_splitter_strategy(
+                            selected_strategy,
+                            params={
+                                "dynamic_max_chars": 800,
+                                "lap_overlap_sentences": 1,
+                                "min_chunk_size": 100,
+                                "valley_prominence_ratio": 0.85
+                            }
+                        )
+                    else:
+                        kb.set_text_splitter_strategy(selected_strategy)
                     messagebox.showinfo("成功", f"已切换到策略: {strategies.get(selected_strategy, selected_strategy)}")
                 except Exception as e:
                     messagebox.showerror("错误", f"切换策略失败: {e}")

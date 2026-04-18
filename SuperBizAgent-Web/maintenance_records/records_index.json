@@ -1,0 +1,149 @@
+[
+  {
+    "timestamp": "2026-04-13T16:36:01.116889",
+    "link": "_gui_log_",
+    "task_id": "log_e82d26d06e",
+    "status": "failed",
+    "error_analysis": {
+      "error_type": "LogERROR",
+      "error_message": "  [主] 接入点失败 [ArkAPIConnectionError]: Connection error., request_id: 20260413163542LdngYVMjMuSekZ5TNHvL",
+      "root_cause": "自动分析失败: Error code: 429 - {'error': {'code': 'SetLimitExceeded', 'message': 'Your account [2103766583] has reached the set inference limit for the [doubao-seed-1-8] model, and the model service has been paused. To continue using this model, please visit the Model Activation page to adjust or close the \"Safe Experience Mode\". Request id: 021776069358807f9065cef9012c43073e2d0226029aed4bd32ae', 'param': '', 'type': 'TooManyRequests'}}, request_id: 202604131636009tIJDkwVIpgnZY1nKUii",
+      "business_impact": "需要人工评估",
+      "code_level_fix": "请查看原始错误信息",
+      "business_level_fix": "请评估业务影响",
+      "priority": "medium",
+      "estimated_fix_time": "未知",
+      "requires_downtime": false,
+      "api_failure_suspected": false,
+      "api_config_recommendation": ""
+    },
+    "log_summary": "[16:34:31] [线程:MainThread] 系统CPU核心数：16\n[16:34:31] [线程:MainThread] 线程池最大工作线程数：8\n[16:35:14] [线程:MainThread] 从文本中提取到URL: https://www.xiaohongshu.com/explore/69db57ee000000001a027bb5?xsec_token=ABD-tbLj1ycd4JrOI1B_5xn1kR6AykCNnk9yvQbcGvNvs=&xsec_source=pc_collect\n[16:35:15] [线程:MainThread] 从链接中提取标题：你一定要知道：优化agent？先放弃SFT/RL ！ - 小红书\n[16:35:15] [线程:MainThread] 添加任务到队列：链接=https://www.xiaohongshu.com/explore/69db57ee000000001a027bb5?xsec_token=ABD-tbLj1ycd4JrOI1B_5xn1kR6AykCNnk9yvQbcGvNvs=&xsec_source=pc_collect\n[16:35:15] [线程:MainThread] 当前待处理：1，执行中：0\n[16:35:15] [线程:MainThread] 启动队列调度：最大并行 8，当前待处理 1（先进先出，接近 Java 线程池行为）\n[16:35:15] [线程:Thread-2 (_queue_scheduler_loop)] 任务提示词：\n[16:35:15] [线程:Thread-2 (_queue_scheduler_loop)] 飞书文件夹路径：就业知识库/就业技术文档集/AI相关\n[16:35:15] [线程:Thread-2 (_queue_scheduler_loop)] 提交到线程池（并行 1/8）：https://www.xiaohongshu.com/explore/69db57ee000000001a027bb5?xsec_token=ABD-tbLj1ycd4JrOI1B_5xn1kR6AykCNnk9yvQbcGvNvs=&x...\n[16:35:15] [线程:ThreadPoolExecutor-1_0] 检测到小红书视频链接，使用图文分析流程（内部会检测视频类型）...\n[16:35:15] [线程:ThreadPoolExecutor-1_0] 开始分析小红书链接...\n[16:35:23] [线程:ThreadPoolExecutor-1_0] 小红书内容类型检测结果：xiaohongshu\n[16:35:23] [线程:ThreadPoolExecutor-1_0] ✓ 检测到小红书图文，继续图文分析...\n[16:35:23] [线程:ThreadPoolExecutor-1_0] 成功提取 5 张图片\n[16:35:25] [线程:ThreadPoolExecutor-1_0] 调用火山引擎API进行总结... (尝试 1/3)\n[16:35:25] [线程:ThreadPoolExecutor-1_0]   使用主接入点: ep-20260411182220-jv5qt\n[16:35:57] [线程:ThreadPoolExecutor-1_0]   [主] 接入点失败 [ArkAPIConnectionError]: Connection error., request_id: 20260413163542LdngYVMjMuSekZ5TNHvL\n\n",
+    "md_file_path": "maintenance_records\\maintenance_log_e82d26d06e_20260413_163601.md"
+  },
+  {
+    "timestamp": "2026-04-13T16:36:44.291153",
+    "link": "_volcengine_",
+    "task_id": "ve_8cbef26909",
+    "status": "failed",
+    "error_analysis": {
+      "error_type": "VolcenginePrimaryFailedBackupOk",
+      "error_message": "火山主接入点失败但备用成功。主: ep-20260411182220-jv5qt 错误: ArkAPIConnectionError: Connection error., request_id: 20260413163542LdngYVMjMuSekZ5TNHvL；已用备: ep-20260320202115-9jqfp。建议：检查控制台 Safe Experience/限额，或把 config.json 中 ai_chat_model 与 ai_chat_model_backup 对调。",
+      "root_cause": "自动分析失败: Error code: 429 - {'error': {'code': 'SetLimitExceeded', 'message': 'Your account [2103766583] has reached the set inference limit for the [doubao-seed-1-8] model, and the model service has been paused. To continue using this model, please visit the Model Activation page to adjust or close the \"Safe Experience Mode\". Request id: 02177606940205281a9193ce9f89e3456d252c7b9d01d0388cf76', 'param': '', 'type': 'TooManyRequests'}}, request_id: 20260413163644meTNVovuUk6J5B9A1T0e",
+      "business_impact": "需要人工评估",
+      "code_level_fix": "请查看原始错误信息",
+      "business_level_fix": "请评估业务影响",
+      "priority": "medium",
+      "estimated_fix_time": "未知",
+      "requires_downtime": false,
+      "api_failure_suspected": false,
+      "api_config_recommendation": ""
+    },
+    "log_summary": "[16:35:15] [线程:MainThread] 从链接中提取标题：你一定要知道：优化agent？先放弃SFT/RL ！ - 小红书\n[16:35:15] [线程:MainThread] 添加任务到队列：链接=https://www.xiaohongshu.com/explore/69db57ee000000001a027bb5?xsec_token=ABD-tbLj1ycd4JrOI1B_5xn1kR6AykCNnk9yvQbcGvNvs=&xsec_source=pc_collect\n[16:35:15] [线程:MainThread] 当前待处理：1，执行中：0\n[16:35:15] [线程:MainThread] 启动队列调度：最大并行 8，当前待处理 1（先进先出，接近 Java 线程池行为）\n[16:35:15] [线程:Thread-2 (_queue_scheduler_loop)] 任务提示词：\n[16:35:15] [线程:Thread-2 (_queue_scheduler_loop)] 飞书文件夹路径：就业知识库/就业技术文档集/AI相关\n[16:35:15] [线程:Thread-2 (_queue_scheduler_loop)] 提交到线程池（并行 1/8）：https://www.xiaohongshu.com/explore/69db57ee000000001a027bb5?xsec_token=ABD-tbLj1ycd4JrOI1B_5xn1kR6AykCNnk9yvQbcGvNvs=&x...\n[16:35:15] [线程:ThreadPoolExecutor-1_0] 检测到小红书视频链接，使用图文分析流程（内部会检测视频类型）...\n[16:35:15] [线程:ThreadPoolExecutor-1_0] 开始分析小红书链接...\n[16:35:23] [线程:ThreadPoolExecutor-1_0] 小红书内容类型检测结果：xiaohongshu\n[16:35:23] [线程:ThreadPoolExecutor-1_0] ✓ 检测到小红书图文，继续图文分析...\n[16:35:23] [线程:ThreadPoolExecutor-1_0] 成功提取 5 张图片\n[16:35:25] [线程:ThreadPoolExecutor-1_0] 调用火山引擎API进行总结... (尝试 1/3)\n[16:35:25] [线程:ThreadPoolExecutor-1_0]   使用主接入点: ep-20260411182220-jv5qt\n[16:35:57] [线程:ThreadPoolExecutor-1_0]   [主] 接入点失败 [ArkAPIConnectionError]: Connection error., request_id: 20260413163542LdngYVMjMuSekZ5TNHvL\n[16:35:57] [线程:ThreadPoolExecutor-1_0]   使用备接入点: ep-20260320202115-9jqfp\n[16:36:01] [线程:Thread-3 (_ops_dispatch_log_incident)] [运维Agent] 已根据日志ERROR生成维护建议: maintenance_records\\maintenance_log_e82d26d06e_20260413_163601.md\n[16:36:40] [线程:ThreadPoolExecutor-1_0] 火山引擎API调用成功（备接入点）\n\n",
+    "md_file_path": "maintenance_records\\maintenance_ve_8cbef26909_20260413_163644.md"
+  },
+  {
+    "timestamp": "2026-04-13T20:16:17.985073",
+    "link": "_gui_log_",
+    "task_id": "log_7bc391cea8",
+    "status": "failed",
+    "error_analysis": {
+      "error_type": "LogERROR",
+      "error_message": "  [主] 接入点失败 [ArkRateLimitError]: Error code: 429 - {'error': {'code': 'SetLimitExceeded', 'message': 'Your account [2103766583] has reached the set inference limit for the [doubao-seed-1-8] model, and the model service has been paused. To continue using this model, please visit the Model Activation page to adjust or close the \"Safe Experience Mode\". Request id: 021776082571315e8eb33bba790666117f5ace3387e18429f24eb', 'param': '', 'type': 'TooManyRequests'}}, request_id: 20260413201613a0wpsoqN3QImsQ1XsBL9",
+      "root_cause": "自动分析失败: Error code: 429 - {'error': {'code': 'SetLimitExceeded', 'message': 'Your account [2103766583] has reached the set inference limit for the [doubao-seed-1-8] model, and the model service has been paused. To continue using this model, please visit the Model Activation page to adjust or close the \"Safe Experience Mode\". Request id: 02177608257546781a9193ce9f89e3456d252c7b9d01d036732e3', 'param': '', 'type': 'TooManyRequests'}}, request_id: 20260413201617J9OqjA0cBTrh1KEJcrYz",
+      "business_impact": "需要人工评估",
+      "code_level_fix": "请查看原始错误信息",
+      "business_level_fix": "请评估业务影响",
+      "priority": "medium",
+      "estimated_fix_time": "未知",
+      "requires_downtime": false,
+      "api_failure_suspected": false,
+      "api_config_recommendation": ""
+    },
+    "log_summary": "无日志",
+    "md_file_path": "maintenance_records\\maintenance_log_7bc391cea8_20260413_201617.md"
+  },
+  {
+    "timestamp": "2026-04-13T23:16:18.111466",
+    "link": "_gui_log_",
+    "task_id": "log_02862550f4",
+    "status": "failed",
+    "error_analysis": {
+      "error_type": "LogERROR",
+      "error_message": "火山引擎总结最终失败: Error code: 429 - {'error': {'code': 'SetLimitExceeded', 'message': 'Your account [2103766583] has reached the set inference limit for the [doubao-seed-2-0-mini] model, and the model service has been paused. To continue using this model, please visit the Model Activation page to adjust or close the \"Safe Experience Mode\". Request id: 021776093370801f742ef2c206840dc107957f7b221b0ffeefbe8', 'param': '', 'type': 'TooManyRequests'}}, request_id: 20260413231613qNw1TBM7wbJoriMozi0d",
+      "root_cause": "自动分析失败: Error code: 429 - {'error': {'code': 'SetLimitExceeded', 'message': 'Your account [2103766583] has reached the set inference limit for the [doubao-seed-1-8] model, and the model service has been paused. To continue using this model, please visit the Model Activation page to adjust or close the \"Safe Experience Mode\". Request id: 02177609337534837079cdcc08b35ab782b1fd6e8da4cf03f4634', 'param': '', 'type': 'TooManyRequests'}}, request_id: 20260413231618DSraAHDAXSFj79FE5zeZ",
+      "business_impact": "需要人工评估",
+      "code_level_fix": "请查看原始错误信息",
+      "business_level_fix": "请评估业务影响",
+      "priority": "medium",
+      "estimated_fix_time": "未知",
+      "requires_downtime": false,
+      "api_failure_suspected": false,
+      "api_config_recommendation": ""
+    },
+    "log_summary": "无日志",
+    "md_file_path": "maintenance_records\\maintenance_log_02862550f4_20260413_231618.md"
+  },
+  {
+    "timestamp": "2026-04-13T23:16:41.370964",
+    "link": "_gui_log_",
+    "task_id": "log_c046d0ee65",
+    "status": "failed",
+    "error_analysis": {
+      "error_type": "LogERROR",
+      "error_message": "火山引擎总结最终失败: Error code: 429 - {'error': {'code': 'SetLimitExceeded', 'message': 'Your account [2103766583] has reached the set inference limit for the [doubao-seed-2-0-mini] model, and the model service has been paused. To continue using this model, please visit the Model Activation page to adjust or close the \"Safe Experience Mode\". Request id: 02177609339376479be1521b480472bd1aa7097703cfa2072475d', 'param': '', 'type': 'TooManyRequests'}}, request_id: 202604132316361ALUvvWBHWiU5XlBuVvc",
+      "root_cause": "自动分析失败: Error code: 429 - {'error': {'code': 'SetLimitExceeded', 'message': 'Your account [2103766583] has reached the set inference limit for the [doubao-seed-1-8] model, and the model service has been paused. To continue using this model, please visit the Model Activation page to adjust or close the \"Safe Experience Mode\". Request id: 0217760933986060076f3f588c303a7ab8265369cf81576b3010c', 'param': '', 'type': 'TooManyRequests'}}, request_id: 20260413231641IDXBJneH5IdQpSOdq2On",
+      "business_impact": "需要人工评估",
+      "code_level_fix": "请查看原始错误信息",
+      "business_level_fix": "请评估业务影响",
+      "priority": "medium",
+      "estimated_fix_time": "未知",
+      "requires_downtime": false,
+      "api_failure_suspected": false,
+      "api_config_recommendation": ""
+    },
+    "log_summary": "无日志",
+    "md_file_path": "maintenance_records\\maintenance_log_c046d0ee65_20260413_231641.md"
+  },
+  {
+    "timestamp": "2026-04-13T23:21:18.451657",
+    "link": "_gui_log_",
+    "task_id": "log_ecb84777ed",
+    "status": "failed",
+    "error_analysis": {
+      "error_type": "LogERROR",
+      "error_message": "火山引擎总结最终失败: Error code: 429 - {'error': {'code': 'SetLimitExceeded', 'message': 'Your account [2103766583] has reached the set inference limit for the [doubao-seed-2-0-mini] model, and the model service has been paused. To continue using this model, please visit the Model Activation page to adjust or close the \"Safe Experience Mode\". Request id: 02177609367071513d48c4760d2f20ff0aabc46dcd14fa8de082c', 'param': '', 'type': 'TooManyRequests'}}, request_id: 202604132321136E5T2RLLz0Qwo1Lh187j",
+      "root_cause": "自动分析失败: Error code: 429 - {'error': {'code': 'SetLimitExceeded', 'message': 'Your account [2103766583] has reached the set inference limit for the [doubao-seed-1-8] model, and the model service has been paused. To continue using this model, please visit the Model Activation page to adjust or close the \"Safe Experience Mode\". Request id: 0217760936756862748f57c5f4210b3bc611acce6828c7aaa43ae', 'param': '', 'type': 'TooManyRequests'}}, request_id: 20260413232118j8Ija2nGxVEuZdL3Isan",
+      "business_impact": "需要人工评估",
+      "code_level_fix": "请查看原始错误信息",
+      "business_level_fix": "请评估业务影响",
+      "priority": "medium",
+      "estimated_fix_time": "未知",
+      "requires_downtime": false,
+      "api_failure_suspected": false,
+      "api_config_recommendation": ""
+    },
+    "log_summary": "无日志",
+    "md_file_path": "maintenance_records\\maintenance_log_ecb84777ed_20260413_232118.md"
+  },
+  {
+    "timestamp": "2026-04-13T23:21:43.530668",
+    "link": "_gui_log_",
+    "task_id": "log_67f649317e",
+    "status": "failed",
+    "error_analysis": {
+      "error_type": "LogERROR",
+      "error_message": "火山引擎总结最终失败: Error code: 429 - {'error': {'code': 'SetLimitExceeded', 'message': 'Your account [2103766583] has reached the set inference limit for the [doubao-seed-2-0-mini] model, and the model service has been paused. To continue using this model, please visit the Model Activation page to adjust or close the \"Safe Experience Mode\". Request id: 0217760936958100076f3f588c303a7ab8265369cf815767f0715', 'param': '', 'type': 'TooManyRequests'}}, request_id: 20260413232138KqYy5dSQ1x0skA0cnowS",
+      "root_cause": "自动分析失败: Error code: 429 - {'error': {'code': 'SetLimitExceeded', 'message': 'Your account [2103766583] has reached the set inference limit for the [doubao-seed-1-8] model, and the model service has been paused. To continue using this model, please visit the Model Activation page to adjust or close the \"Safe Experience Mode\". Request id: 0217760937007622748f57c5f4210b3bc611acce6828c7a45ddcb', 'param': '', 'type': 'TooManyRequests'}}, request_id: 20260413232143ctJQ5H9COzXgbNaBvDvD",
+      "business_impact": "需要人工评估",
+      "code_level_fix": "请查看原始错误信息",
+      "business_level_fix": "请评估业务影响",
+      "priority": "medium",
+      "estimated_fix_time": "未知",
+      "requires_downtime": false,
+      "api_failure_suspected": false,
+      "api_config_recommendation": ""
+    },
+    "log_summary": "无日志",
+    "md_file_path": "maintenance_records\\maintenance_log_67f649317e_20260413_232143.md"
+  }
+]

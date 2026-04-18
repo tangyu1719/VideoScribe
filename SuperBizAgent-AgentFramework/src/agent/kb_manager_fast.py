@@ -113,6 +113,7 @@ class FastKnowledgeBaseManager:
         self.kb_dir = os.path.join(self.base_dir, "knowledge_base")
         self.index_file = os.path.join(self.kb_dir, "vector_index_fast.json")
         self.cache_file = os.path.join(self.kb_dir, "file_cache_fast.json")
+        self.splitter_config_file = os.path.join(self.kb_dir, "splitter_config.json")
         self.chunks: List[DocumentChunk] = []
         self.embedding_model = None
         self.embedding_dim = 1024  # BGE-Large维度
@@ -124,6 +125,14 @@ class FastKnowledgeBaseManager:
         # 文本分割策略
         self._text_splitter_strategy_name = text_splitter_strategy
         self._text_splitter: Optional[TextSplitterStrategy] = None
+        self._splitter_params: Dict[str, Any] = {
+            "chunk_size": 500,
+            "overlap": 50,
+            "min_chunk_size": 100,
+            "dynamic_max_chars": 800,
+            "lap_overlap_sentences": 1,
+            "valley_prominence_ratio": 0.85
+        }
 
         # 创建目录
         os.makedirs(self.kb_dir, exist_ok=True)
@@ -150,6 +159,7 @@ class FastKnowledgeBaseManager:
 
         self._load_index()
         self._load_cache()
+        self._load_splitter_config()
 
         self._initialized = True
 
@@ -164,30 +174,51 @@ class FastKnowledgeBaseManager:
     def _init_text_splitter(self):
         """初始化文本分割策略"""
         try:
+            chunk_size = int(self._splitter_params.get("chunk_size", 500))
+            overlap = int(self._splitter_params.get("overlap", 50))
+            min_chunk_size = int(self._splitter_params.get("min_chunk_size", 100))
+            dynamic_max_chars = int(self._splitter_params.get("dynamic_max_chars", 800))
+            lap_overlap_sentences = int(self._splitter_params.get("lap_overlap_sentences", 1))
+            valley_prominence_ratio = float(self._splitter_params.get("valley_prominence_ratio", 0.85))
+
             # 对于动态语义分割策略，需要传入embedding模型
             if self._text_splitter_strategy_name == 'dynamic_semantic':
                 self._text_splitter = TextSplitterFactory.get_strategy(
                     self._text_splitter_strategy_name,
                     embedding_model=self.embedding_model if self._model_loaded else None,
-                    chunk_size=500,
-                    overlap=50
+                    chunk_size=chunk_size,
+                    overlap=overlap,
+                    min_chunk_size=min_chunk_size,
+                    dynamic_max_chars=dynamic_max_chars,
+                    lap_overlap_sentences=lap_overlap_sentences,
+                    valley_prominence_ratio=valley_prominence_ratio
                 )
             else:
                 self._text_splitter = TextSplitterFactory.get_strategy(
                     self._text_splitter_strategy_name,
-                    chunk_size=500,
-                    overlap=50
+                    chunk_size=chunk_size,
+                    overlap=overlap
                 )
-            logger.info(f"【分割策略】使用策略: {self._text_splitter.name}")
+            logger.info(f"【分割策略】使用策略: {self._text_splitter.name}，参数: {self._splitter_params}")
         except Exception as e:
             logger.error(f"【分割策略】初始化失败: {e}，使用默认策略")
             self._text_splitter = TextSplitterFactory.get_strategy('sentence_boundary')
 
-    def set_text_splitter_strategy(self, strategy_name: str):
+    def set_text_splitter_strategy(self, strategy_name: str, params: Optional[Dict[str, Any]] = None):
         """切换文本分割策略"""
         logger.info(f"【分割策略】切换策略: {strategy_name}")
         self._text_splitter_strategy_name = strategy_name
+        if params:
+            self._splitter_params.update(params)
         self._init_text_splitter()
+        self._save_splitter_config()
+
+    def get_text_splitter_config(self) -> Dict[str, Any]:
+        """获取当前分割策略配置（含参数）。"""
+        return {
+            "strategy": self._text_splitter_strategy_name,
+            "params": dict(self._splitter_params)
+        }
 
     def get_available_strategies(self) -> Dict[str, str]:
         """获取可用的分割策略列表"""
@@ -314,6 +345,38 @@ class FastKnowledgeBaseManager:
                 json.dump(self._file_cache, f, ensure_ascii=False, indent=2)
         except Exception as e:
             logger.error(f"【缓存保存】失败: {e}")
+
+    def _load_splitter_config(self):
+        """加载文本分割策略配置（持久化）。"""
+        if not os.path.exists(self.splitter_config_file):
+            return
+        try:
+            with open(self.splitter_config_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            strategy = data.get("strategy")
+            params = data.get("params", {})
+            if strategy:
+                self._text_splitter_strategy_name = strategy
+            if isinstance(params, dict):
+                self._splitter_params.update(params)
+            # 重新按持久化配置初始化
+            self._init_text_splitter()
+            logger.info(f"【分割策略配置】已加载持久化配置: {self._text_splitter_strategy_name}")
+        except Exception as e:
+            logger.error(f"【分割策略配置】加载失败: {e}")
+
+    def _save_splitter_config(self):
+        """保存文本分割策略配置（持久化）。"""
+        data = {
+            "strategy": self._text_splitter_strategy_name,
+            "params": self._splitter_params,
+            "updated_at": datetime.now().isoformat()
+        }
+        try:
+            with open(self.splitter_config_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"【分割策略配置】保存失败: {e}")
 
     def _get_file_hash(self, file_path: str) -> str:
         """计算文件哈希"""
